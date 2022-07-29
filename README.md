@@ -16,7 +16,7 @@ bcmc is developed by Josh Schmelzle and Kevin L. Marshall and is released under 
 
 ## why
 
-Existing tools such as Multicast Hammer are platform specific and may have unsupported system dependencies on modern OSes. bcmc aims to be a free cross-platform tool that can be used from *unix or Windows.
+Existing tools such as Multicast Hammer are platform specific and may have unsupported system dependencies on modern OSes. bcmc aims to be a free cross-platform tool that can be used from *unix or Windows. While bcmc aims to function cross platform, please note some optional features may not work on certain OSes.
 
 ## usage
 
