@@ -15,7 +15,7 @@ from .helpers import ServiceExit
 
 
 class MulticastServer:
-    def __init__(self, group, port, padding, interval, dscp):
+    def __init__(self, group, port, padding, interval, dscp, host=None):
         self.group = group
         self.port = int(port)
         self.padding = int(padding)
@@ -25,21 +25,21 @@ class MulticastServer:
         self.hostname = socket.gethostname()
 
         self.multicast_group = (self.group, self.port)
-        self.mc_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.mc_server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         ttl = struct.pack("b", 3)
-        self.mc_server.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+        self.mc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
 
         # Enable port reuse so we can run multiple clients and servers on single (host, port).
         # Does not work on Windows
         if os.name != "nt":
-            self.mc_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            self.mc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
 
         # Set timeout so the socket does not block indefinitely.
-        self.mc_server.settimeout(0.2)
+        self.mc_server_sock.settimeout(0.2)
         if self.dscp:
             self.tos = int(self.dscp) << 2
             # print("Sending packets with DSCP ({0}) and TOS ({1})".format(self.dscp, self.tos))
-            self.mc_server.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
+            self.mc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
 
     def multicast(self):
         counter = 0
@@ -60,7 +60,7 @@ class MulticastServer:
                     )
                 )
                 payload = payload_message + "{0}".format(extra)
-                self.mc_server.sendto(payload.encode(), self.multicast_group)
+                self.mc_server_sock.sendto(payload.encode(), self.multicast_group)
                 print(
                     "Sending multicast ({0} bytes) -> {1}".format(
                         len(payload), payload_message
@@ -74,9 +74,20 @@ class MulticastServer:
                         len(payload)
                     )
                 )
+            else:
+                print(
+                    "Error: {0} on interface for {1}".format(
+                        error,
+                        socket.inet_ntoa(
+                            self.mc_server_sock.getsockopt(
+                                socket.IPPROTO_IP, socket.IP_MULTICAST_IF, 4
+                            )
+                        ),
+                    )
+                )
             raise ServiceExit
         finally:
-            self.mc_server.close()
+            self.mc_server_sock.close()
 
 
 class MulticastListener(threading.Thread):
@@ -138,7 +149,7 @@ class MulticastListener(threading.Thread):
         now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
         data = payload.decode()
         print(
-            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}\n---".format(
+            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}\n".format(
                 len(data), now, address[0], address[1], data.strip()
             )
         )

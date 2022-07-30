@@ -27,25 +27,25 @@ class BroadcastServer:
         self.stop_event = threading.Event()
 
         # AF_INET is a socket for IP packets
-        self.bc_server = socket.socket(
+        self.bc_server_sock = socket.socket(
             socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
         )
 
         # Enable port reuse so we can run multiple clients and servers on single (host, port).
         # Does not work on Windows
         if os.name != "nt":
-            self.bc_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
 
         # Set socket to broadcasting mode
-        self.bc_server.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
         # Set timeout so the socket does not block indefinitely.
-        self.bc_server.settimeout(0.2)
+        self.bc_server_sock.settimeout(0.2)
 
         if self.dscp:
             self.tos = int(self.dscp) << 2
             # print("Sending packets with DSCP ({0}) and TOS ({1})".format(self.dscp, self.tos))
-            self.mc_server.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
+            self.bc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
 
     def broadcast(self):
         counter = 0
@@ -62,7 +62,7 @@ class BroadcastServer:
                     )
                 )
                 payload = payload_message + "{0}".format(extra)
-                self.bc_server.sendto(
+                self.bc_server_sock.sendto(
                     payload.encode(), (self.broadcast_address, self.port)
                 )
                 print(
@@ -78,9 +78,20 @@ class BroadcastServer:
                         len(payload)
                     )
                 )
+            else:
+                print(
+                    "Error: {0} on interface for {1}".format(
+                        error,
+                        socket.inet_ntoa(
+                            self.bc_server_sock.getsockopt(
+                                socket.IPPROTO_IP, socket.SO_BROADCAST, 4
+                            )
+                        ),
+                    )
+                )
             raise ServiceExit
         finally:
-            self.bc_server.close()
+            self.bc_server_sock.close()
 
 
 class BroadcastListener(threading.Thread):
@@ -135,7 +146,7 @@ class BroadcastListener(threading.Thread):
         now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
         data = payload.decode()
         print(
-            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}\n---".format(
+            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}\n".format(
                 len(data), now, address[0], address[1], data.strip()
             )
         )

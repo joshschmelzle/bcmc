@@ -47,8 +47,8 @@ setup(
     python_requires=">=2.7",
     extras_require=extras,
     entry_points={"console_scripts": ["bcmc=bcmc.__main__:main"]},
-    license="BSD 3-Clause License",
-    platforms=["win32"],
+    license=about["__license__"],
+    platforms=["win32", "linux", "macos"],
     keywords=[
         "bcmc",
         "broadcast",

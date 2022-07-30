@@ -96,7 +96,7 @@ def setup_parser():
         metavar="<host>",
         default=None,
         type=ip,
-        help="bind to the interface associated with provided <host> address",
+        help="bind to the interface associated with provided <host> address (experimental)",
     )
     parser.add_argument(
         "-v",
