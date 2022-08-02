@@ -59,13 +59,13 @@ def main():
             if args.broadcast:
                 # do server broadcast stuff.
                 bc_tx = BroadcastServer(
-                    args.port, args.padding, args.interval, args.dscp
+                    args.port, args.padding, args.interval, args.dscp, args.debug, host=args.host
                 )
                 bc_tx.broadcast()
             if args.multicast:
                 # do server multicast stuff.
                 mc_tx = MulticastServer(
-                    args.group, args.port, args.padding, args.interval, args.dscp
+                    args.group, args.port, args.padding, args.interval, args.dscp, args.debug, host=args.host
                 )
                 mc_tx.multicast()
         # start threads

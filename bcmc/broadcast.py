@@ -6,6 +6,7 @@
 import os
 import socket
 import threading
+import platform
 import time
 from datetime import datetime
 
@@ -15,38 +16,62 @@ from .helpers import ServiceExit
 
 class BroadcastServer:
     # send a UDP IP broadcast to 255.255.255.255
-    def __init__(self, port, padding, interval, dscp, host=None):
+    def __init__(self, port, padding, interval, dscp, debug, family=socket.AF_INET, host=None):
         self.port = int(port)
         self.padding = 2 * int(padding)
         self.broadcast_address = "255.255.255.255"
         self.dscp = dscp
         self.interval = float(interval)
+        self.family = family
+        self.debug = debug
         self.host = host
         if not self.host:
             self.host = socket.gethostname()
         self.stop_event = threading.Event()
 
+        try:
         # AF_INET is a socket for IP packets
-        self.bc_server_sock = socket.socket(
-            socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
-        )
+            self.bc_server_sock = socket.socket(
+                socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
+            )
+        except socket.error as e:
+            print("Socket could not be created. Error Code : %s" % e)
+            raise ServiceExit
 
-        # Enable port reuse so we can run multiple clients and servers on single (host, port).
-        # Does not work on Windows
-        if os.name != "nt":
-            self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-
-        # Set socket to broadcasting mode
-        self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
         # Set timeout so the socket does not block indefinitely.
         self.bc_server_sock.settimeout(0.2)
+        
+        self.set_platform_socket_options()
+        
+        if self.debug:
+            print("Sending with socket: {0}".format(self.bc_server_sock))
 
+    def set_platform_socket_options(self):
+        # Set socket to broadcasting mode
+        self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        
         if self.dscp:
             self.tos = int(self.dscp) << 2
-            # print("Sending packets with DSCP ({0}) and TOS ({1})".format(self.dscp, self.tos))
-            self.bc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
+            if self.debug:
+                print("Attempt sending packets with DSCP ({0}) and TOS ({1})".format(self.dscp, self.tos))
+            if self.family == socket.AF_INET:
+                self.bc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
+            elif  self.family == socket.AF_INET6:
+                self.mc_server_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_TCLASS, self.tos)
+            else:
+                raise ValueError('Invalid family %d' %  self.family)
+        
+        if platform.system() == "Windows":
+            return
+        
+        if platform.system() == "Linux" or platform.system() == "Darwin":
+            # Enable port reuse so we can run multiple clients and servers on single (host, port).
+            self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            return
 
+        raise ValueError("{0} does not appear to be a supported platform".format(platform.system()))
+    
     def broadcast(self):
         counter = 0
         try:
@@ -56,11 +81,24 @@ class BroadcastServer:
                 if self.padding:
                     extra = " " * self.padding
                 now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
-                payload_message = (
-                    "broadcast from {0} to {1}:{2} message {3} at {4}".format(
-                        self.host, self.broadcast_address, self.port, counter, now
+                
+                if self.debug:
+                     payload_message = (
+                        "broadcast from {0} ({1}) to {2}:{3} message {4} at {5}".format(
+                            self.host,
+                            socket.inet_ntoa(self.bc_server_sock.getsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, 4)),
+                            self.broadcast_address, 
+                            self.port, 
+                            counter, 
+                            now
+                        )
                     )
-                )
+                else:
+                    payload_message = (
+                        "broadcast from {0} to {1}:{2} message {3} at {4}".format(
+                            self.host, self.broadcast_address, self.port, counter, now
+                        )
+                    )
                 payload = payload_message + "{0}".format(extra)
                 self.bc_server_sock.sendto(
                     payload.encode(), (self.broadcast_address, self.port)
@@ -106,26 +144,34 @@ class BroadcastListener(threading.Thread):
         self.stop_event = threading.Event()
 
         # Setup socket
-        self.client = socket.socket(
+        self.bc_client_sock = socket.socket(
             socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
         )
 
-        # Enable port reuse so we can run multiple clients and servers on single (host, port).
-        # This does not work on Windows (nt)
-        if os.name != "nt":
-            self.client.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-
-        # Enable broadcasting mode
-        self.client.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-
         # Socket set to non-blocking
-        self.client.setblocking(0)
+        self.bc_client_sock.setblocking(0)
+        
+        # Set socket options
+        self.set_platform_socket_options()
 
-        # Set timeout so the socket does not block indefinitely.
-        # self.client.settimeout(0.1)
+    def set_platform_socket_options(self):
+        if self.host:
+            self.bc_client_sock.bind((self.host, self.port))
+        else:
+            self.bc_client_sock.bind(("", self.port))
+        self.bc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        
+        if platform.system() == "Windows":
+            return
+        
+        if platform.system() == "Linux" or platform.system() == "Darwin":
+            # Enable port reuse so we can run multiple clients and servers on single (host, port).
+            self.bc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            return
+        
+        raise ValueError("{0} does not appear to be a supported platform".format(platform.system()))
 
     def start(self):
-        self.client.bind(("", self.port))
         self.thread = threading.Thread(target=self.run)
         self.thread.start()
         header = "Listening for broadcasts on port {0}".format(self.port)
@@ -136,11 +182,11 @@ class BroadcastListener(threading.Thread):
     def run(self):
         while not self.stop_event.is_set():
             try:
-                payload, address = self.client.recvfrom(self.buffer_size)
+                payload, address = self.bc_client_sock.recvfrom(self.buffer_size)
                 self.on_packet(payload, address)
             except socket.error:
                 pass
-        self.client.close()
+        self.bc_client_sock.close()
 
     def on_packet(self, payload, address):
         now = datetime.now().strftime("%H:%M:%S.%f")[:-2]

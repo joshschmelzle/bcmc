@@ -4,6 +4,7 @@
 
 # stdlib imports
 import os
+import platform
 import socket
 import struct
 import threading
@@ -15,31 +16,60 @@ from .helpers import ServiceExit
 
 
 class MulticastServer:
-    def __init__(self, group, port, padding, interval, dscp, host=None):
+    def __init__(self, group, port, padding, interval, dscp, debug, family=socket.AF_INET, host=None):
         self.group = group
         self.port = int(port)
         self.padding = int(padding)
         self.interval = float(interval)
+        self.family = family
         self.dscp = dscp
         self.stop_event = threading.Event()
+        self.debug = debug
+        self.host = host
         self.hostname = socket.gethostname()
 
         self.multicast_group = (self.group, self.port)
-        self.mc_server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        ttl = struct.pack("b", 3)
-        self.mc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
-
-        # Enable port reuse so we can run multiple clients and servers on single (host, port).
-        # Does not work on Windows
-        if os.name != "nt":
-            self.mc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        
+        try:
+            self.mc_server_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+        except socket.error as e:
+            print("Socket could not be created. Error Code : %s" % e)
+            raise ServiceExit
 
         # Set timeout so the socket does not block indefinitely.
         self.mc_server_sock.settimeout(0.2)
+        
+        self.set_platform_socket_options()
+        
+        if self.debug:
+            print("Sending with socket: {0}".format(self.mc_server_sock))
+        
+
+    def set_platform_socket_options(self):
+        ttl = struct.pack("b", 3)
+        self.mc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
+        
         if self.dscp:
             self.tos = int(self.dscp) << 2
-            # print("Sending packets with DSCP ({0}) and TOS ({1})".format(self.dscp, self.tos))
-            self.mc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
+            if self.debug:
+                print("Attempt sending packets with DSCP ({0}) and TOS ({1})".format(self.dscp, self.tos))
+                
+            if  self.family == socket.AF_INET:
+                self.mc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
+            elif  self.family == socket.AF_INET6:
+                self.mc_server_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_TCLASS, self.tos)
+            else:
+                raise ValueError('Invalid family %d' % self.family)
+            
+        if platform.system() == "Windows":
+            return
+        
+        if platform.system() == "Linux" or platform.system() == "Darwin":
+            # Enable port reuse so we can run multiple clients and servers on single (host, port).
+            self.mc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            return
+        
+        raise ValueError("{0} does not appear to be a supported platform".format(platform.system()))
 
     def multicast(self):
         counter = 0
@@ -50,15 +80,27 @@ class MulticastServer:
                 if self.padding:
                     extra = " " * self.padding
                 now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
-                payload_message = (
-                    "multicast from {0} to {1}:{2} message {3} at {4}".format(
-                        self.hostname,
-                        self.multicast_group[0],
-                        self.multicast_group[1],
-                        counter,
-                        now,
+                if self.debug:
+                    payload_message = (
+                        "multicast from {0} ({1}) to {2}:{3} message {4} at {5}".format(
+                            self.hostname,
+                            socket.inet_ntoa(self.mc_server_sock.getsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, 4)),
+                            self.multicast_group[0],
+                            self.multicast_group[1],
+                            counter,
+                            now,
+                        )
                     )
-                )
+                else:
+                    payload_message = (
+                        "multicast from {0} to {1}:{2} message {3} at {4}".format(
+                            self.hostname,
+                            self.multicast_group[0],
+                            self.multicast_group[1],
+                            counter,
+                            now,
+                        )
+                    )
                 payload = payload_message + "{0}".format(extra)
                 self.mc_server_sock.sendto(payload.encode(), self.multicast_group)
                 print(
@@ -102,31 +144,41 @@ class MulticastListener(threading.Thread):
         self.horizontal_rule = 0
         self.stop_event = threading.Event()
 
-        # setup IP socket
-        self.socket = socket.socket(
+        # setup client socket
+        self.mc_client_sock = socket.socket(
             socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
         )
-
-        # Enable port reuse so we can run multiple clients and servers on single (host, port).
-        # This does not work on Windows (nt)
-        if os.name != "nt":
-            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-        self.socket.setblocking(0)
-
-    def start(self):
-        if os.name == "nt":
-            self.socket.bind((self.host, self.port))
-            self.socket.setsockopt(
+        
+        # Socket set to non-blocking
+        self.mc_client_sock.setblocking(0)
+        
+        self.set_platform_socket_options()
+        
+    def set_platform_socket_options(self):
+        if platform.system() == "Windows":
+            self.mc_client_sock.bind((self.host, self.port))
+            self.mc_client_sock.setsockopt(
                 socket.IPPROTO_IP,
                 socket.IP_ADD_MEMBERSHIP,
                 socket.inet_aton(self.group) + socket.inet_aton(self.host),
             )
-        else:
-            self.socket.bind(("", self.port))
-            mreq = struct.pack("4sl", socket.inet_aton(self.group), socket.INADDR_ANY)
-            self.socket.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+            return
+        
+        if platform.system() == "Linux" or platform.system() == "Darwin":
+            # Enable port reuse so we can run multiple clients and servers on single (host, port).
+            self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            
+            self.mc_client_sock.bind((self.host, self.port))
+            self.mc_client_sock.setsockopt(
+                socket.IPPROTO_IP,
+                socket.IP_ADD_MEMBERSHIP,
+                socket.inet_aton(self.group) + socket.inet_aton(self.host),
+            )
+            return
+        
+        raise ValueError("{0} does not appear to be a supported platform".format(platform.system()))
 
+    def start(self):
         self.thread = threading.Thread(target=self.run)
         self.thread.start()
         header = "Listening for multicasts on group {0} port {1}".format(
@@ -139,11 +191,11 @@ class MulticastListener(threading.Thread):
     def run(self):
         while not self.stop_event.is_set():
             try:
-                payload, address = self.socket.recvfrom(self.buffer_size)
+                payload, address = self.mc_client_sock.recvfrom(self.buffer_size)
                 self.on_packet(payload, address)
             except socket.error:
                 pass
-        self.socket.close()
+        self.mc_client_sock.close()
 
     def on_packet(self, payload, address):
         now = datetime.now().strftime("%H:%M:%S.%f")[:-2]

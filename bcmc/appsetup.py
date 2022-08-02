@@ -106,6 +106,12 @@ def setup_parser():
         version="%(prog)s {0}".format(__version__),
         help=argparse.SUPPRESS,
     )
+    parser.add_argument(
+        "--debug",
+        dest="debug",
+        action="store_true",
+        help="increase output for debugging purposes",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "-c",
