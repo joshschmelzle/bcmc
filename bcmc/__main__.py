@@ -48,24 +48,35 @@ def main():
             # do client mode stuff.
             if args.broadcast:
                 # do client broadcast stuff.
-                bc_rx = BroadcastListener(args.port)
+                bc_rx = BroadcastListener(args.port, args.debug)
                 threads.append(bc_rx)
             if args.multicast:
                 # do client multicast stuff.
-                mc_rx = MulticastListener(args.group, args.port)
+                mc_rx = MulticastListener(args.group, args.port, args.debug)
                 threads.append(mc_rx)
         if args.server:
             # do server mode stuff
             if args.broadcast:
                 # do server broadcast stuff.
                 bc_tx = BroadcastServer(
-                    args.port, args.padding, args.interval, args.dscp, args.debug, host=args.host
+                    args.port,
+                    args.padding,
+                    args.interval,
+                    args.dscp,
+                    args.debug,
+                    host=args.host,
                 )
                 bc_tx.broadcast()
             if args.multicast:
                 # do server multicast stuff.
                 mc_tx = MulticastServer(
-                    args.group, args.port, args.padding, args.interval, args.dscp, args.debug, host=args.host
+                    args.group,
+                    args.port,
+                    args.padding,
+                    args.interval,
+                    args.dscp,
+                    args.debug,
+                    host=args.host,
                 )
                 mc_tx.multicast()
         # start threads

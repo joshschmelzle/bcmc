@@ -4,9 +4,9 @@
 
 # stdlib imports
 import os
+import platform
 import socket
 import threading
-import platform
 import time
 from datetime import datetime
 
@@ -16,7 +16,9 @@ from .helpers import ServiceExit
 
 class BroadcastServer:
     # send a UDP IP broadcast to 255.255.255.255
-    def __init__(self, port, padding, interval, dscp, debug, family=socket.AF_INET, host=None):
+    def __init__(
+        self, port, padding, interval, dscp, debug, family=socket.AF_INET, host=None
+    ):
         self.port = int(port)
         self.padding = 2 * int(padding)
         self.broadcast_address = "255.255.255.255"
@@ -30,7 +32,7 @@ class BroadcastServer:
         self.stop_event = threading.Event()
 
         try:
-        # AF_INET is a socket for IP packets
+            # AF_INET is a socket for IP packets
             self.bc_server_sock = socket.socket(
                 socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
             )
@@ -38,40 +40,48 @@ class BroadcastServer:
             print("Socket could not be created. Error Code : %s" % e)
             raise ServiceExit
 
-
         # Set timeout so the socket does not block indefinitely.
         self.bc_server_sock.settimeout(0.2)
-        
+
         self.set_platform_socket_options()
         
-        if self.debug:
-            print("Sending with socket: {0}".format(self.bc_server_sock))
+        print("Sending with socket: {0}".format(self.bc_server_sock))
 
     def set_platform_socket_options(self):
         # Set socket to broadcasting mode
         self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        
+
         if self.dscp:
             self.tos = int(self.dscp) << 2
             if self.debug:
-                print("Attempt sending packets with DSCP ({0}) and TOS ({1})".format(self.dscp, self.tos))
+                print(
+                    "Attempt sending packets with DSCP ({0}) and TOS ({1})".format(
+                        self.dscp, self.tos
+                    )
+                )
             if self.family == socket.AF_INET:
-                self.bc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_TOS, self.tos)
-            elif  self.family == socket.AF_INET6:
-                self.mc_server_sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_TCLASS, self.tos)
+                self.bc_server_sock.setsockopt(
+                    socket.IPPROTO_IP, socket.IP_TOS, self.tos
+                )
+            elif self.family == socket.AF_INET6:
+                self.bc_server_sock.setsockopt(
+                    socket.IPPROTO_IPV6, socket.IPV6_TCLASS, self.tos
+                )
             else:
-                raise ValueError('Invalid family %d' %  self.family)
-        
+                raise ValueError("Invalid family %d" % self.family)
+
         if platform.system() == "Windows":
             return
-        
+
         if platform.system() == "Linux" or platform.system() == "Darwin":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             return
 
-        raise ValueError("{0} does not appear to be a supported platform".format(platform.system()))
-    
+        raise ValueError(
+            "{0} does not appear to be a supported platform".format(platform.system())
+        )
+
     def broadcast(self):
         counter = 0
         try:
@@ -81,16 +91,20 @@ class BroadcastServer:
                 if self.padding:
                     extra = " " * self.padding
                 now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
-                
+
                 if self.debug:
-                     payload_message = (
+                    payload_message = (
                         "broadcast from {0} ({1}) to {2}:{3} message {4} at {5}".format(
                             self.host,
-                            socket.inet_ntoa(self.bc_server_sock.getsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, 4)),
-                            self.broadcast_address, 
-                            self.port, 
-                            counter, 
-                            now
+                            socket.inet_ntoa(
+                                self.bc_server_sock.getsockopt(
+                                    socket.IPPROTO_IP, socket.IP_MULTICAST_IF, 4
+                                )
+                            ),
+                            self.broadcast_address,
+                            self.port,
+                            counter,
+                            now,
                         )
                     )
                 else:
@@ -133,10 +147,11 @@ class BroadcastServer:
 
 
 class BroadcastListener(threading.Thread):
-    def __init__(self, port, host=None):
+    def __init__(self, port, debug, host=None):
         threading.Thread.__init__(self)
         self.port = int(port)
         self.host = host
+        self.debug = debug
         if not self.host:
             self.host = socket.gethostbyname(socket.gethostname())
         self.buffer_size = 10240
@@ -150,9 +165,11 @@ class BroadcastListener(threading.Thread):
 
         # Socket set to non-blocking
         self.bc_client_sock.setblocking(0)
-        
+
         # Set socket options
         self.set_platform_socket_options()
+
+        print("Listening with socket: {0}".format(self.bc_client_sock))
 
     def set_platform_socket_options(self):
         if self.host:
@@ -160,16 +177,18 @@ class BroadcastListener(threading.Thread):
         else:
             self.bc_client_sock.bind(("", self.port))
         self.bc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        
+
         if platform.system() == "Windows":
             return
-        
+
         if platform.system() == "Linux" or platform.system() == "Darwin":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.bc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             return
-        
-        raise ValueError("{0} does not appear to be a supported platform".format(platform.system()))
+
+        raise ValueError(
+            "{0} does not appear to be a supported platform".format(platform.system())
+        )
 
     def start(self):
         self.thread = threading.Thread(target=self.run)

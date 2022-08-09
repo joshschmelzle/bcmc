@@ -1,22 +1,21 @@
-# bcmc.py
-
-bcmc is a CLI-centric IP broadcast and multicast tool built with Python.
-
 ```text
  _
-| |__   ___ _ __ ___   ___
-| '_ \ / __| '_ ` _ \ / __|
-| |_) | (__| | | | | | (__
-|_.__/ \___|_| |_| |_|\___|
+| |__   ___ _ __ ___   ___   _ __  _   _
+| '_ \ / __| '_ ` _ \ / __| | '_ \| | | |
+| |_) | (__| | | | | | (__ _| |_) | |_| |
+|_.__/ \___|_| |_| |_|\___(_) .__/ \__, |
+                            |_|    |___/
 ```
 
-bcmc is a testing tool for generating and validating broadcast or multicast traffic. bcmc can generate broadcast or multicast traffic or receive depending on mode. bcmc is a CLI based client/server tool inspired by iperf.
+bcmc is a CLI-centric IP broadcast and multicast tool built with Python. it is a testing tool for generating and validating broadcast or multicast traffic.
+
+bcmc can be run as a server to generate broadcast or multicast traffic or bcmc can be run as a client to receive broadcast or multicast traffic. it is a CLI-based client/server tool inspired by iperf.
 
 bcmc is developed by Josh Schmelzle and Kevin L. Marshall and is released under a three-clause BSD license.
 
-## why
+## why bcmc?
 
-Existing tools such as Multicast Hammer are platform specific and may have unsupported system dependencies on modern OSes. bcmc aims to be a free cross-platform tool that can be used from *unix or Windows. While bcmc aims to function cross platform, please note some optional features may not work on certain OSes.
+Existing tools such as Multicast Hammer are platform specific and may have unsupported system dependencies on modern OSes. bcmc aims to be a free cross-platform tool that can be used from *unix or Windows. While bcmc aims to function cross-platform, please note some optional features may not work on certain OSes.
 
 ## usage
 
