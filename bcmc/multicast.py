@@ -23,7 +23,7 @@ class MulticastServer:
         padding,
         interval,
         dscp,
-        debug,
+        debug=False,
         family=socket.AF_INET,
         host=None,
     ):
@@ -53,7 +53,7 @@ class MulticastServer:
 
         self.set_platform_socket_options()
         
-        print("Sending with socket: {0}".format(self.mc_server_sock))
+        print("Socket object {0}".format(self.mc_server_sock))
 
     def set_platform_socket_options(self):
         ttl = struct.pack("b", 3)
@@ -61,12 +61,11 @@ class MulticastServer:
 
         if self.dscp:
             self.tos = int(self.dscp) << 2
-            if self.debug:
-                print(
-                    "Attempt sending packets with DSCP ({0}) and TOS ({1})".format(
-                        self.dscp, self.tos
-                    )
+            print(
+                "Attempt to apply markings to multicast server socket with DSCP ({0}) and TOS ({1})".format(
+                    self.dscp, self.tos
                 )
+            )
 
             if self.family == socket.AF_INET:
                 self.mc_server_sock.setsockopt(
@@ -82,7 +81,12 @@ class MulticastServer:
         if platform.system() == "Windows":
             return
 
-        if platform.system() == "Linux" or platform.system() == "Darwin":
+        if platform.system() == "Linux":
+            # Enable port reuse so we can run multiple clients and servers on single (host, port).
+            self.mc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            return
+        
+        if platform.system() == "Darwin":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.mc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             return
@@ -157,7 +161,7 @@ class MulticastServer:
 
 
 class MulticastListener(threading.Thread):
-    def __init__(self, group, port, debug, host=None):
+    def __init__(self, group, port, debug=False, host=None):
         threading.Thread.__init__(self)
         self.port = int(port)
         self.host = host
@@ -182,7 +186,7 @@ class MulticastListener(threading.Thread):
         print("Listening with socket: {0}".format(self.mc_client_sock))
 
     def set_platform_socket_options(self):
-        if platform.system() == "Windows":
+        
             self.mc_client_sock.bind((self.host, self.port))
             self.mc_client_sock.setsockopt(
                 socket.IPPROTO_IP,
@@ -190,17 +194,19 @@ class MulticastListener(threading.Thread):
                 socket.inet_aton(self.group) + socket.inet_aton(self.host),
             )
             return
+        
+        if platform.system() == "Windows":
+            self.mc_client_sock.bind((self.host, self.port))
+            return
 
-        if platform.system() == "Linux" or platform.system() == "Darwin":
+        if platform.system() == "Linux":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-            self.mc_client_sock.bind((self.host, self.port))
-            self.mc_client_sock.setsockopt(
-                socket.IPPROTO_IP,
-                socket.IP_ADD_MEMBERSHIP,
-                socket.inet_aton(self.group) + socket.inet_aton(self.host),
-            )
+            return
+        
+        if platform.system() == "Darwin":
+            # Enable port reuse so we can run multiple clients and servers on single (host, port).
+            self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             return
 
         raise ValueError(
