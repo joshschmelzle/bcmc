@@ -7,5 +7,3 @@ class ServiceExit(Exception):
     """
     Exception to trigger clean exit of running threads
     """
-
-    pass

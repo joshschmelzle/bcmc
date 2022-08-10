@@ -3,12 +3,12 @@
 # multicast.py: provide multicast class for bcmc
 
 # stdlib imports
-import os
 import platform
 import socket
 import struct
 import threading
 import time
+import sys
 from datetime import datetime
 
 # app imports
@@ -22,7 +22,7 @@ class MulticastServer:
         port,
         padding,
         interval,
-        dscp,
+        dscp=0,
         debug=False,
         family=socket.AF_INET,
         host=None,
@@ -37,6 +37,7 @@ class MulticastServer:
         self.debug = debug
         self.host = host
         self.hostname = socket.gethostname()
+        self.pyv = sys.version_info.major
 
         self.multicast_group = (self.group, self.port)
 
@@ -52,8 +53,9 @@ class MulticastServer:
         self.mc_server_sock.settimeout(0.2)
 
         self.set_platform_socket_options()
-        
-        print("Socket object {0}".format(self.mc_server_sock))
+
+        if self.pyv == 3:
+            print("Socket object {0}".format(self.mc_server_sock))
 
     def set_platform_socket_options(self):
         ttl = struct.pack("b", 3)
@@ -66,7 +68,6 @@ class MulticastServer:
                     self.dscp, self.tos
                 )
             )
-
             if self.family == socket.AF_INET:
                 self.mc_server_sock.setsockopt(
                     socket.IPPROTO_IP, socket.IP_TOS, self.tos
@@ -85,7 +86,7 @@ class MulticastServer:
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.mc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             return
-        
+
         if platform.system() == "Darwin":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.mc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -172,6 +173,7 @@ class MulticastListener(threading.Thread):
         self.horizontal_rule = 0
         self.debug = debug
         self.stop_event = threading.Event()
+        self.pyv = sys.version_info.major
 
         # setup client socket
         self.mc_client_sock = socket.socket(
@@ -183,10 +185,11 @@ class MulticastListener(threading.Thread):
 
         self.set_platform_socket_options()
 
-        print("Listening with socket: {0}".format(self.mc_client_sock))
+        if self.pyv == 3:
+            print("Listening with socket: {0}".format(self.mc_client_sock))
 
     def set_platform_socket_options(self):
-        
+        if platform.system() == "Windows":
             self.mc_client_sock.bind((self.host, self.port))
             self.mc_client_sock.setsockopt(
                 socket.IPPROTO_IP,
@@ -194,19 +197,27 @@ class MulticastListener(threading.Thread):
                 socket.inet_aton(self.group) + socket.inet_aton(self.host),
             )
             return
-        
-        if platform.system() == "Windows":
-            self.mc_client_sock.bind((self.host, self.port))
-            return
 
         if platform.system() == "Linux":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+            self.mc_client_sock.bind(("", self.port))
+            mreq = struct.pack("4sl", socket.inet_aton(self.group), socket.INADDR_ANY)
+            self.mc_client_sock.setsockopt(
+                socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq
+            )
             return
-        
+
         if platform.system() == "Darwin":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+            self.mc_client_sock.bind(("", self.port))
+            mreq = struct.pack("4sl", socket.inet_aton(self.group), socket.INADDR_ANY)
+            self.mc_client_sock.setsockopt(
+                socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq
+            )
             return
 
         raise ValueError(

@@ -9,6 +9,7 @@
 
 # stdlib imports
 import signal
+import sys
 
 # our app imports
 from .appsetup import setup_parser
@@ -57,7 +58,7 @@ def main():
             # start threads
             for t in threads:
                 t.start()
-        
+
         if args.server:
             # do server mode stuff
             if args.broadcast:
@@ -66,8 +67,8 @@ def main():
                     args.port,
                     args.padding,
                     args.interval,
-                    args.dscp,
-                    args.debug,
+                    dscp=args.dscp,
+                    debug=args.debug,
                     host=args.host,
                 )
                 bc_tx.broadcast()
@@ -78,8 +79,8 @@ def main():
                     args.port,
                     args.padding,
                     args.interval,
-                    args.dscp,
-                    args.debug,
+                    dscp=args.dscp,
+                    debug=args.debug,
                     host=args.host,
                 )
                 mc_tx.multicast()

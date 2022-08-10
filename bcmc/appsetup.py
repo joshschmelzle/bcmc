@@ -168,7 +168,7 @@ def setup_parser():
         dest="dscp",
         metavar="46",
         type=dscp,
-        default=None,
+        default=0,
         help="set the Differentiated Service Code Point value applied to packets sent in server mode",
     )
     parser.add_argument(
