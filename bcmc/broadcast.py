@@ -3,9 +3,9 @@
 # broadcast.py: provide broadcast class for bcmc
 
 # stdlib imports
-import os
 import platform
 import socket
+import sys
 import threading
 import time
 from datetime import datetime
@@ -17,7 +17,14 @@ from .helpers import ServiceExit
 class BroadcastServer:
     # send a UDP IP broadcast to 255.255.255.255
     def __init__(
-        self, port, padding, interval, dscp, debug, family=socket.AF_INET, host=None
+        self,
+        port,
+        padding,
+        interval,
+        dscp=0,
+        debug=False,
+        family=socket.AF_INET,
+        host=None,
     ):
         self.port = int(port)
         self.padding = 2 * int(padding)
@@ -27,6 +34,7 @@ class BroadcastServer:
         self.family = family
         self.debug = debug
         self.host = host
+        self.pyv = sys.version_info.major
         if not self.host:
             self.host = socket.gethostname()
         self.stop_event = threading.Event()
@@ -40,25 +48,25 @@ class BroadcastServer:
             print("Socket could not be created. Error Code : %s" % e)
             raise ServiceExit
 
+        self.set_platform_socket_options()
+
         # Set timeout so the socket does not block indefinitely.
         self.bc_server_sock.settimeout(0.2)
 
-        self.set_platform_socket_options()
-        
-        print("Sending with socket: {0}".format(self.bc_server_sock))
+        if self.pyv == 3:
+            print("Sending with socket: {0}".format(self.bc_server_sock))
 
     def set_platform_socket_options(self):
         # Set socket to broadcasting mode
         self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-        if self.dscp:
+        if self.dscp > 0:
             self.tos = int(self.dscp) << 2
-            if self.debug:
-                print(
-                    "Attempt sending packets with DSCP ({0}) and TOS ({1})".format(
-                        self.dscp, self.tos
-                    )
+            print(
+                "Attempt to apply markings to broadcast server socket with DSCP ({0}) and TOS ({1})".format(
+                    self.dscp, self.tos
                 )
+            )
             if self.family == socket.AF_INET:
                 self.bc_server_sock.setsockopt(
                     socket.IPPROTO_IP, socket.IP_TOS, self.tos
@@ -73,7 +81,12 @@ class BroadcastServer:
         if platform.system() == "Windows":
             return
 
-        if platform.system() == "Linux" or platform.system() == "Darwin":
+        if platform.system() == "Linux":
+            # Enable port reuse so we can run multiple clients and servers on single (host, port).
+            self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            return
+
+        if platform.system() == "Darwin":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
             self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             return
@@ -147,7 +160,7 @@ class BroadcastServer:
 
 
 class BroadcastListener(threading.Thread):
-    def __init__(self, port, debug, host=None):
+    def __init__(self, port, debug=False, host=None):
         threading.Thread.__init__(self)
         self.port = int(port)
         self.host = host
@@ -157,28 +170,33 @@ class BroadcastListener(threading.Thread):
         self.buffer_size = 10240
         self.horizontal_rule = 0
         self.stop_event = threading.Event()
+        self.pyv = sys.version_info.major
 
         # Setup socket
         self.bc_client_sock = socket.socket(
             socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
         )
 
-        # Socket set to non-blocking
-        self.bc_client_sock.setblocking(0)
-
         # Set socket options
         self.set_platform_socket_options()
 
-        print("Listening with socket: {0}".format(self.bc_client_sock))
+        # Socket set to non-blocking
+        self.bc_client_sock.setblocking(0)
 
-    def set_platform_socket_options(self):
-        if self.host:
-            self.bc_client_sock.bind((self.host, self.port))
-        else:
-            self.bc_client_sock.bind(("", self.port))
         self.bc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
+        self.bc_client_sock.bind(("", self.port))
+
+        if self.pyv == 3:
+            print("Socket object: {0}".format(self.bc_client_sock))
+
+    def set_platform_socket_options(self):
         if platform.system() == "Windows":
+            return
+
+        if platform.system() == "Linux":
+            # Enable port reuse so we can run multiple clients and servers on single (host, port).
+            self.bc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             return
 
         if platform.system() == "Linux" or platform.system() == "Darwin":

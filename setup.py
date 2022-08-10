@@ -21,19 +21,6 @@ try:
 except FileNotFoundError:
     long_description = about["__description__"]
 
-extras = {
-    "test": [
-        "tox",
-        "black",
-        "isort",
-        "autoflake",
-        "mypy",
-        "pytest",
-        "pytest-cov",
-        "coverage-badge",
-    ],
-}
-
 setup(
     name=about["__title__"],
     version=about["__version__"],
@@ -45,7 +32,6 @@ setup(
     author=about["__author__"],
     author_email=about["__author_email__"],
     python_requires=">=2.7",
-    extras_require=extras,
     entry_points={"console_scripts": ["bcmc=bcmc.__main__:main"]},
     license=about["__license__"],
     platforms=["win32", "linux", "macos"],

@@ -54,6 +54,10 @@ def main():
                 # do client multicast stuff.
                 mc_rx = MulticastListener(args.group, args.port, args.debug)
                 threads.append(mc_rx)
+            # start threads
+            for t in threads:
+                t.start()
+
         if args.server:
             # do server mode stuff
             if args.broadcast:
@@ -62,8 +66,8 @@ def main():
                     args.port,
                     args.padding,
                     args.interval,
-                    args.dscp,
-                    args.debug,
+                    dscp=args.dscp,
+                    debug=args.debug,
                     host=args.host,
                 )
                 bc_tx.broadcast()
@@ -74,14 +78,12 @@ def main():
                     args.port,
                     args.padding,
                     args.interval,
-                    args.dscp,
-                    args.debug,
+                    args.ttl,
+                    dscp=args.dscp,
+                    debug=args.debug,
                     host=args.host,
                 )
                 mc_tx.multicast()
-        # start threads
-        for t in threads:
-            t.start()
 
         # loop until shutdown is triggered
         while True:

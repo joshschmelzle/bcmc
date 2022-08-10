@@ -1,0 +1,32 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "bcmc -s -mc",
+            "type": "python",
+            "request": "launch",
+            "module": "bcmc",
+            "justMyCode": true,
+            "args": [
+                "-s",
+                "-mc"
+            ],
+        },
+        {
+            "name": "bcmc -s -mc --dscp 40",
+            "type": "python",
+            "request": "launch",
+            "module": "bcmc",
+            "justMyCode": true,
+            "args": [
+                "-s",
+                "-mc",
+                "--dscp",
+                "40"
+            ],
+        }
+    ]
+}

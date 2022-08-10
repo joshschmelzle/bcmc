@@ -39,6 +39,15 @@ def dscp(value):
     return dscp
 
 
+def ttl(value):
+    # validate user ttl input is between 1 and 255
+
+    ttl = int(value)
+    if ttl > 255 or ttl < 1:
+        raise argparse.ArgumentTypeError("ttl value must be between 1 and 255")
+    return ttl
+
+
 def isIPv4(ip):
     if ip:
         if str(int(ip)) == ip and 0 <= int(ip) <= 255:
@@ -164,11 +173,19 @@ def setup_parser():
         help="interval to send multicast packets",
     )
     parser.add_argument(
+        "--ttl",
+        dest="ttl",
+        metavar="3",
+        type=ttl,
+        default=3,
+        help="set the hop restriction in network for multicast server",
+    )
+    parser.add_argument(
         "--dscp",
         dest="dscp",
         metavar="46",
         type=dscp,
-        default=None,
+        default=0,
         help="set the Differentiated Service Code Point value applied to packets sent in server mode",
     )
     parser.add_argument(
