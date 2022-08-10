@@ -5,9 +5,9 @@
 # stdlib imports
 import platform
 import socket
+import sys
 import threading
 import time
-import sys
 from datetime import datetime
 
 # app imports
@@ -53,7 +53,8 @@ class BroadcastServer:
         # Set timeout so the socket does not block indefinitely.
         self.bc_server_sock.settimeout(0.2)
 
-        print("Sending with socket: {0}".format(self.bc_server_sock))
+        if self.pyv == 3:
+            print("Sending with socket: {0}".format(self.bc_server_sock))
 
     def set_platform_socket_options(self):
         # Set socket to broadcasting mode

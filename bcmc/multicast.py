@@ -6,9 +6,9 @@
 import platform
 import socket
 import struct
+import sys
 import threading
 import time
-import sys
 from datetime import datetime
 
 # app imports
@@ -22,6 +22,7 @@ class MulticastServer:
         port,
         padding,
         interval,
+        ttl=3,
         dscp=0,
         debug=False,
         family=socket.AF_INET,
@@ -32,6 +33,7 @@ class MulticastServer:
         self.padding = int(padding)
         self.interval = float(interval)
         self.family = family
+        self.ttl = ttl
         self.dscp = dscp
         self.stop_event = threading.Event()
         self.debug = debug
@@ -58,7 +60,7 @@ class MulticastServer:
             print("Socket object {0}".format(self.mc_server_sock))
 
     def set_platform_socket_options(self):
-        ttl = struct.pack("b", 3)
+        ttl = struct.pack("b", self.ttl)
         self.mc_server_sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, ttl)
 
         if self.dscp:
@@ -198,10 +200,10 @@ class MulticastListener(threading.Thread):
             )
             return
 
-        if platform.system() == "Linux":
-            # Enable port reuse so we can run multiple clients and servers on single (host, port).
-            self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # Enable port reuse so we can run multiple clients and servers on single (host, port).
+        self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
+        if platform.system() == "Linux":
             self.mc_client_sock.bind(("", self.port))
             mreq = struct.pack("4sl", socket.inet_aton(self.group), socket.INADDR_ANY)
             self.mc_client_sock.setsockopt(
@@ -210,9 +212,6 @@ class MulticastListener(threading.Thread):
             return
 
         if platform.system() == "Darwin":
-            # Enable port reuse so we can run multiple clients and servers on single (host, port).
-            self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
             self.mc_client_sock.bind(("", self.port))
             mreq = struct.pack("4sl", socket.inet_aton(self.group), socket.INADDR_ANY)
             self.mc_client_sock.setsockopt(

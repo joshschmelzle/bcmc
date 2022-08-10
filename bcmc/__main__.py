@@ -9,7 +9,6 @@
 
 # stdlib imports
 import signal
-import sys
 
 # our app imports
 from .appsetup import setup_parser
@@ -79,6 +78,7 @@ def main():
                     args.port,
                     args.padding,
                     args.interval,
+                    args.ttl,
                     dscp=args.dscp,
                     debug=args.debug,
                     host=args.host,
