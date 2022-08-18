@@ -27,6 +27,7 @@ class MulticastServer:
         debug=False,
         family=socket.AF_INET,
         host=None,
+        payload=None,
     ):
         self.group = group
         self.port = int(port)
@@ -40,6 +41,7 @@ class MulticastServer:
         self.host = host
         self.hostname = socket.gethostname()
         self.pyv = sys.version_info.major
+        self.payload = payload
 
         self.multicast_group = (self.group, self.port)
 
@@ -57,7 +59,7 @@ class MulticastServer:
         self.set_platform_socket_options()
 
         if self.pyv == 3:
-            print("Socket object {0}".format(self.mc_server_sock))
+            print("Sending with socket: {0}".format(self.mc_server_sock))
 
     def set_platform_socket_options(self):
         ttl = struct.pack("b", self.ttl)
@@ -132,7 +134,10 @@ class MulticastServer:
                             now,
                         )
                     )
-                payload = payload_message + "{0}".format(extra)
+                if self.payload:
+                    payload = self.payload
+                else:
+                    payload = payload_message + "{0}".format(extra)
                 self.mc_server_sock.sendto(payload.encode(), self.multicast_group)
                 print(
                     "Sending multicast ({0} bytes) -> {1}".format(

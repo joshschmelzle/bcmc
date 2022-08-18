@@ -69,6 +69,7 @@ def main():
                     dscp=args.dscp,
                     debug=args.debug,
                     host=args.host,
+                    payload=args.payload,
                 )
                 bc_tx.broadcast()
             if args.multicast:
@@ -82,6 +83,7 @@ def main():
                     dscp=args.dscp,
                     debug=args.debug,
                     host=args.host,
+                    payload=args.payload,
                 )
                 mc_tx.multicast()
 
