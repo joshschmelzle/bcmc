@@ -10,7 +10,7 @@
 __title__ = "bcmc"
 __author__ = "Josh Schmelzle and Kevin L. Marshall"
 __description__ = "a CLI-centric broadcast and multicast validation tool"
-__version__ = "0.0.5"
+__version__ = "0.0.6"
 __author_email__ = "josh@joshschmelzle.com"
 __url__ = "https://github.com/joshschmelzle/bcmc"
 __license__ = "BSD-3-Clause"

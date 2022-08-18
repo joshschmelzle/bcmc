@@ -25,6 +25,7 @@ class BroadcastServer:
         debug=False,
         family=socket.AF_INET,
         host=None,
+        payload=None,
     ):
         self.port = int(port)
         self.padding = 2 * int(padding)
@@ -38,6 +39,7 @@ class BroadcastServer:
         if not self.host:
             self.host = socket.gethostname()
         self.stop_event = threading.Event()
+        self.payload = payload
 
         try:
             # AF_INET is a socket for IP packets
@@ -126,7 +128,10 @@ class BroadcastServer:
                             self.host, self.broadcast_address, self.port, counter, now
                         )
                     )
-                payload = payload_message + "{0}".format(extra)
+                if self.payload:
+                    payload = self.payload
+                else:
+                    payload = payload_message + "{0}".format(extra)
                 self.bc_server_sock.sendto(
                     payload.encode(), (self.broadcast_address, self.port)
                 )
@@ -188,7 +193,7 @@ class BroadcastListener(threading.Thread):
         self.bc_client_sock.bind(("", self.port))
 
         if self.pyv == 3:
-            print("Socket object: {0}".format(self.bc_client_sock))
+            print("Sending with socket: {0}".format(self.bc_client_sock))
 
     def set_platform_socket_options(self):
         if platform.system() == "Windows":

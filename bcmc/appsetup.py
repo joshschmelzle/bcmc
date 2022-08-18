@@ -193,6 +193,13 @@ def setup_parser():
         dest="padding",
         metavar="0",
         default="0",
-        help="number of additional null bytes per payload sent in server mode",
+        help="number of additional null bytes per payload which is sent in server mode",
+    )
+    parser.add_argument(
+        "--payload",
+        dest="payload",
+        metavar="'string'",
+        default="",
+        help="add an arbitrary payload which is sent in server mode",
     )
     return parser
