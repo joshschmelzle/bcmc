@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 #
-# appsetup.py: provide application setup for bcmc
+# app_setup.py: provide application setup for bcmc
 
 
 import argparse
 
-from .__version__ import __author__, __version__
+from .version import __version__
 
 
 def port(value):
@@ -85,7 +85,7 @@ def setup_parser():
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description=desc,
-        epilog="Made with Python by {0}".format(__author__),
+        epilog="Made with Python ♥",
         fromfile_prefix_chars="@",
         usage=usage_blurb,
     )

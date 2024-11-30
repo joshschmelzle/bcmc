@@ -1,8 +1,29 @@
 Publishing and Distribution
 ===========================
 
-Building and uploading to PyPi
-------------------------------
+Testing
+-------
+
+Install depends:
+
+```bash
+python -m pip install -U pytest tox
+```
+
+Run the test driver:
+
+```
+tox
+```
+
+Run the formatter:
+
+```
+tox -e format
+```
+
+Building (setup.py)
+-------------------
 
 Install depends:
 
@@ -16,7 +37,27 @@ To create a source archive and a wheel for your package, you can run the followi
 python setup.py sdist bdist_wheel
 ```
 
-This will create two files in a newly created dist directory, a source archive and a wheel:
+This will create two files in a newly created dist directory, a source archive (.tar.gz) and a wheel (.whl):
+
+Building (pyproject.toml)
+-------------------------
+
+Install depends:
+
+```bash
+python -m pip install -U pip build pytest setuptools wheel twine
+```
+
+To create a source archive and a wheel for your package, you can run the following command:
+
+```bash
+python -m build
+```
+
+This will create two files in a newly created dist directory, a source archive (.tar.gz) and a wheel (.whl):
+
+Uploading to PyPi
+-----------------
 
 Newer versions of Twine (1.12.0 and above) can also check that your package description will render properly on PyPI.
 
