@@ -111,8 +111,11 @@ git tag
 git tag -n
 ```
 
-Push your tags:
+Push your tag:
 
 ```bash
-git push --tags
+git push origin <tag>
+git push origin v0.1.0
 ```
+
+
