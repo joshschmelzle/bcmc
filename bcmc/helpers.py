@@ -217,3 +217,11 @@ def is_multicast_address(address):
         return 224 <= int(address.split(".")[0]) <= 239
     except (AttributeError, ValueError):
         return False
+
+
+def default_ipv4_address():
+    """The host's own IPv4 address by hostname, or 0.0.0.0 if it won't resolve."""
+    try:
+        return socket.gethostbyname(socket.gethostname())
+    except OSError:
+        return "0.0.0.0"

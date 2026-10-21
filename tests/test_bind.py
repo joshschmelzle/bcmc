@@ -204,7 +204,12 @@ class BindTests(unittest.TestCase):
         port = listener.mc_client_sock.getsockname()[1]
         server = MulticastServer(group, port, 0, 1)
         self.addCleanup(server.mc_server_sock.close)
-        server.mc_server_sock.sendto(b"open", (group, port))
+        try:
+            server.mc_server_sock.sendto(b"open", (group, port))
+        except OSError as exc:
+            if exc.errno in (errno.EHOSTUNREACH, errno.ENETUNREACH):
+                self.skipTest(f"no default multicast route: {exc}")
+            raise
         got = recv_once(listener.mc_client_sock, 1.0)
         self.assertIsNotNone(got)
         self.assertEqual(got[0], b"open")

@@ -15,6 +15,7 @@ from .helpers import (
     ServiceExit,
     bind_udp_receiver,
     bind_udp_sender,
+    default_ipv4_address,
     enable_packet_info,
     interface_index_for_ipv4,
     recv_packet,
@@ -183,8 +184,10 @@ class MulticastListener(threading.Thread):
         self.port = int(port)
         self.bind_address = host or None
         self.host = host
-        if not self.host:
-            self.host = socket.gethostbyname(socket.gethostname())
+        if not self.host and platform.system() == "Windows":
+            # Only Windows binds and joins on this address. Resolving the
+            # hostname can stall for a long time on macOS, so skip it there.
+            self.host = default_ipv4_address()
         self.group = group
         self.buffer_size = 10240
         self.horizontal_rule = 0
