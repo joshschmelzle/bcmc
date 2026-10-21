@@ -20,6 +20,12 @@ _SIOCGIFADDR = {"Linux": 0x8915, "Darwin": 0xC0206921}
 # Darwin IP_BOUND_IF (netinet/in.h). Python does not export it.
 _IP_BOUND_IF = getattr(socket, "IP_BOUND_IF", 25)
 
+# IP_PKTINFO (setsockopt) and its control message type. Linux uses 8; Darwin
+# uses 26 for both IP_RECVPKTINFO and IP_PKTINFO. Both deliver a
+# struct in_pktinfo {ifindex, spec_dst, addr}, where addr is the destination.
+_IP_PKTINFO = {"Linux": 8, "Darwin": 26}
+_PKTINFO_SIZE = 12
+
 
 def ipv4_interfaces():
     """Return [(interface name, IPv4 address), ...] for local interfaces.
@@ -154,3 +160,60 @@ def bind_udp_receiver(sock, address, port, multicast=False):
             )
         return
     _bind_or_die(sock, (address, port))
+
+
+def interface_index_for_ipv4(address):
+    """Return the interface index that owns address, or None."""
+    name = interface_name_for_ipv4(address) if address else None
+    if not name:
+        return None
+    try:
+        return socket.if_nametoindex(name)
+    except OSError:
+        return None
+
+
+def enable_packet_info(sock):
+    """Ask the kernel to report each packet's arrival interface and
+    destination address. Return True when recv_packet can report them.
+
+    macOS IP_BOUND_IF picks the egress interface but still delivers
+    broadcasts that arrive on other interfaces, and a wildcard listener on a
+    shared port also sees broadcasts and multicasts meant for the other mode.
+    Packet info lets listeners drop those. Windows Python has no recvmsg.
+    """
+    option = _IP_PKTINFO.get(platform.system())
+    if option is None or not hasattr(sock, "recvmsg"):
+        return False
+    try:
+        sock.setsockopt(socket.IPPROTO_IP, option, 1)
+    except OSError:
+        return False
+    return True
+
+
+def recv_packet(sock, buffer_size, packet_info):
+    """Receive one datagram. Return (payload, address, ifindex, destination).
+
+    ifindex and destination are None when packet info is unavailable.
+    """
+    if not packet_info:
+        payload, address = sock.recvfrom(buffer_size)
+        return payload, address, None, None
+    payload, ancdata, _flags, address = sock.recvmsg(
+        buffer_size, socket.CMSG_SPACE(_PKTINFO_SIZE)
+    )
+    option = _IP_PKTINFO.get(platform.system())
+    for level, kind, data in ancdata:
+        if level == socket.IPPROTO_IP and kind == option and len(data) >= 12:
+            ifindex = struct.unpack("I", data[:4])[0]
+            destination = socket.inet_ntoa(data[8:12])
+            return payload, address, ifindex, destination
+    return payload, address, None, None
+
+
+def is_multicast_address(address):
+    try:
+        return 224 <= int(address.split(".")[0]) <= 239
+    except (AttributeError, ValueError):
+        return False

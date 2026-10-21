@@ -11,7 +11,14 @@ import time
 from datetime import datetime
 
 # app imports
-from .helpers import ServiceExit, bind_udp_receiver, bind_udp_sender
+from .helpers import (
+    ServiceExit,
+    bind_udp_receiver,
+    bind_udp_sender,
+    enable_packet_info,
+    interface_index_for_ipv4,
+    recv_packet,
+)
 
 
 class MulticastServer:
@@ -195,6 +202,9 @@ class MulticastListener(threading.Thread):
 
         self.set_platform_socket_options()
 
+        self.packet_info = enable_packet_info(self.mc_client_sock)
+        self.interface_index = interface_index_for_ipv4(self.bind_address)
+
         print(f"Listening with socket: {self.mc_client_sock}")
 
     def set_platform_socket_options(self):
@@ -209,6 +219,9 @@ class MulticastListener(threading.Thread):
 
         # Enable port reuse so we can run multiple clients and servers on single (host, port).
         self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if platform.system() == "Darwin":
+            # BSD needs SO_REUSEPORT to share a wildcard UDP port between processes.
+            self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
 
         if platform.system() == "Linux" or platform.system() == "Darwin":
             # Wildcard bind is required to receive the group. --bind pins the
@@ -250,11 +263,23 @@ class MulticastListener(threading.Thread):
     def run(self):
         while not self.stop_event.is_set():
             try:
-                payload, address = self.mc_client_sock.recvfrom(self.buffer_size)
-                self.on_packet(payload, address)
+                payload, address, ifindex, destination = recv_packet(
+                    self.mc_client_sock, self.buffer_size, self.packet_info
+                )
+                if self.accepts(ifindex, destination):
+                    self.on_packet(payload, address)
             except OSError:
                 pass
         self.mc_client_sock.close()
+
+    def accepts(self, ifindex, destination):
+        """Drop packets not sent to the group (such as broadcasts on the same
+        port), and packets from other interfaces under --bind."""
+        if destination and destination != self.group:
+            return False
+        if self.interface_index and ifindex and ifindex != self.interface_index:
+            return False
+        return True
 
     def on_packet(self, payload, address):
         now = datetime.now().strftime("%H:%M:%S.%f")[:-2]

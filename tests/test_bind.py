@@ -22,6 +22,14 @@ def multicast_if(sock):
     return socket.inet_ntoa(raw)
 
 
+def local_address(sock):
+    """The socket's bound address. Windows raises for an unbound socket."""
+    try:
+        return sock.getsockname()[0]
+    except OSError:
+        return "0.0.0.0"
+
+
 def recv_once(sock, timeout):
     sock.settimeout(timeout)
     try:
@@ -62,7 +70,7 @@ class BindTests(unittest.TestCase):
         server = BroadcastServer(9, 0, 1)
         self.addCleanup(server.bc_server_sock.close)
         self.assertIsNone(server.bind_address)
-        self.assertEqual(server.bc_server_sock.getsockname()[0], "0.0.0.0")
+        self.assertEqual(local_address(server.bc_server_sock), "0.0.0.0")
         self.assertEqual(multicast_if(server.bc_server_sock), "0.0.0.0")
 
     def test_broadcast_server_bind_sets_source(self):
@@ -86,7 +94,7 @@ class BindTests(unittest.TestCase):
         server = MulticastServer("239.255.1.2", 9, 0, 1)
         self.addCleanup(server.mc_server_sock.close)
         self.assertIsNone(server.bind_address)
-        self.assertEqual(server.mc_server_sock.getsockname()[0], "0.0.0.0")
+        self.assertEqual(local_address(server.mc_server_sock), "0.0.0.0")
         self.assertEqual(multicast_if(server.mc_server_sock), "0.0.0.0")
 
     def test_cli_bind_is_applied_to_broadcast_sockets(self):
