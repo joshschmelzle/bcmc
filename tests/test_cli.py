@@ -46,6 +46,19 @@ class ArgumentTests(unittest.TestCase):
         self.assertEqual(text.count("run in client mode"), 1)
 
 
+class OutputEncodingTests(unittest.TestCase):
+    def test_help_works_on_a_legacy_code_page(self):
+        env = dict(os.environ, PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
+        result = subprocess.run(
+            [sys.executable, "-m", "bcmc", "-h"],
+            capture_output=True,
+            env=env,
+            timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+        self.assertIn(b"Made with Python", result.stdout)
+
+
 class PaddingTests(unittest.TestCase):
     def test_broadcast_and_multicast_pad_with_the_same_null_bytes(self):
         bc = BroadcastServer(9, 5, 1)
