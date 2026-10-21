@@ -4,6 +4,7 @@
 
 
 import argparse
+import ipaddress
 
 from .version import __version__
 
@@ -48,27 +49,39 @@ def ttl(value):
     return ttl
 
 
-def isIPv4(ip):
-    if ip:
-        if str(int(ip)) == ip and 0 <= int(ip) <= 255:
-            return True
-    return False
+def ip(value):
+    # validate a dotted-quad IPv4 address such as 192.168.1.10
+    try:
+        return str(ipaddress.IPv4Address(value))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            "{0!r} is not a valid IPv4 address (use a dotted quad like 192.168.1.10)".format(
+                value
+            )
+        )
 
 
-def ip(ip):
-    number_of_decimals = ip.count(".")
-    decimals = ip.split(".")
-    if (
-        number_of_decimals >= 1
-        and number_of_decimals <= 4
-        and all(isIPv4(octet) for octet in decimals)
-    ):
-        if number_of_decimals == 1:
-            return "{0}.0.0.{1}".format(decimals[0], decimals[1])
-        if number_of_decimals == 2:
-            return "{0}.0.{1}.{2}".format(decimals[0], decimals[1], decimals[2])
-        return ip
-    raise argparse.ArgumentTypeError("IP must be a valid IPv4 IP Address")
+def multicast_group(value):
+    # validate an IPv4 multicast group address (224.0.0.0/4)
+    address = ip(value)
+    if not ipaddress.IPv4Address(address).is_multicast:
+        raise argparse.ArgumentTypeError(
+            "{0} is not a multicast address (224.0.0.0 to 239.255.255.255)".format(
+                address
+            )
+        )
+    return address
+
+
+def padding(value):
+    # validate user padding input is a non-negative integer
+    try:
+        count = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError("padding must be a whole number")
+    if count < 0:
+        raise argparse.ArgumentTypeError("padding must be 0 or more")
+    return count
 
 
 def setup_parser():
@@ -136,7 +149,7 @@ def setup_parser():
         dest="server",
         action="store_true",
         default=False,
-        help="run in client mode",
+        help="run in server mode",
     )
     traffic_type = parser.add_mutually_exclusive_group()
     traffic_type.add_argument(
@@ -159,7 +172,7 @@ def setup_parser():
         "--group",
         dest="group",
         metavar="239.0.0.2",
-        type=ip,
+        type=multicast_group,
         default="239.0.0.2",
         help="multicast group address (239.0.0.2 by default)",
     )
@@ -170,7 +183,7 @@ def setup_parser():
         metavar="1",
         type=interval,
         default="1",
-        help="interval to send multicast packets",
+        help="seconds between packets sent in server mode",
     )
     parser.add_argument(
         "--ttl",
@@ -192,7 +205,8 @@ def setup_parser():
         "--padding",
         dest="padding",
         metavar="0",
-        default="0",
+        type=padding,
+        default=0,
         help="number of additional null bytes per payload which is sent in server mode",
     )
     parser.add_argument(

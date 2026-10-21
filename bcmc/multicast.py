@@ -103,14 +103,16 @@ class MulticastServer:
             "{0} does not appear to be a supported platform".format(platform.system())
         )
 
+    def build_payload(self, message):
+        """The payload to send: --payload or the message, plus null padding."""
+        body = self.payload if self.payload else message
+        return body + "\0" * self.padding
+
     def multicast(self):
         counter = 0
         try:
             while not self.stop_event.is_set():
                 counter += 1
-                extra = ""
-                if self.padding:
-                    extra = " " * self.padding
                 now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
                 if self.debug:
                     payload_message = (
@@ -137,10 +139,7 @@ class MulticastServer:
                             now,
                         )
                     )
-                if self.payload:
-                    payload = self.payload
-                else:
-                    payload = payload_message + "{0}".format(extra)
+                payload = self.build_payload(payload_message)
                 self.mc_server_sock.sendto(payload.encode(), self.multicast_group)
                 print(
                     "Sending multicast ({0} bytes) -> {1}".format(
@@ -190,8 +189,9 @@ class MulticastListener(threading.Thread):
             socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
         )
 
-        # Socket set to non-blocking
-        self.mc_client_sock.setblocking(0)
+        # Block briefly on receive so the loop can check stop_event without
+        # spinning the CPU.
+        self.mc_client_sock.settimeout(0.5)
 
         self.set_platform_socket_options()
 
@@ -258,9 +258,12 @@ class MulticastListener(threading.Thread):
 
     def on_packet(self, payload, address):
         now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
-        data = payload.decode()
+        data = payload.decode(errors="replace")
+        text = data.rstrip("\0")
+        padding = len(data) - len(text)
+        suffix = " (+{0} padding bytes)".format(padding) if padding else ""
         print(
-            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}\n".format(
-                len(data), now, address[0], address[1], data.strip()
+            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}{5}\n".format(
+                len(payload), now, address[0], address[1], text.strip(), suffix
             )
         )

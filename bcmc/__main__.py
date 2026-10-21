@@ -9,6 +9,7 @@
 
 # stdlib imports
 import signal
+import time
 
 # our app imports
 from .appsetup import setup_parser
@@ -98,12 +99,17 @@ def main():
             if args.multicast:
                 server.multicast()
 
-        # loop until shutdown is triggered
+        # Wait for a shutdown signal without spinning the CPU. SIGINT and
+        # SIGTERM raise ServiceExit in the main thread, even during sleep.
         while True:
-            pass
+            time.sleep(1)
     except ServiceExit:
         for t in threads:
             t.stop_event.set()
+        for t in threads:
+            worker = getattr(t, "thread", None)
+            if worker is not None:
+                worker.join(timeout=2)
 
 
 if __name__ == "__main__":

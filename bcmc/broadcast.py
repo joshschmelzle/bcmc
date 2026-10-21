@@ -27,7 +27,7 @@ class BroadcastServer:
         payload=None,
     ):
         self.port = int(port)
-        self.padding = 2 * int(padding)
+        self.padding = int(padding)
         self.broadcast_address = "255.255.255.255"
         self.dscp = dscp
         self.interval = float(interval)
@@ -102,25 +102,33 @@ class BroadcastServer:
             "{0} does not appear to be a supported platform".format(platform.system())
         )
 
+    def source_address(self):
+        """The address broadcasts are sent from, for debug and error output."""
+        try:
+            address = self.bc_server_sock.getsockname()[0]
+        except OSError:
+            address = None
+        if not address or address == "0.0.0.0":
+            return self.bind_address or "default interface"
+        return address
+
+    def build_payload(self, message):
+        """The payload to send: --payload or the message, plus null padding."""
+        body = self.payload if self.payload else message
+        return body + "\0" * self.padding
+
     def broadcast(self):
         counter = 0
         try:
             while not self.stop_event.is_set():
                 counter += 1
-                extra = ""
-                if self.padding:
-                    extra = " " * self.padding
                 now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
 
                 if self.debug:
                     payload_message = (
                         "broadcast from {0} ({1}) to {2}:{3} message {4} at {5}".format(
                             self.host,
-                            socket.inet_ntoa(
-                                self.bc_server_sock.getsockopt(
-                                    socket.IPPROTO_IP, socket.IP_MULTICAST_IF, 4
-                                )
-                            ),
+                            self.source_address(),
                             self.broadcast_address,
                             self.port,
                             counter,
@@ -133,10 +141,7 @@ class BroadcastServer:
                             self.host, self.broadcast_address, self.port, counter, now
                         )
                     )
-                if self.payload:
-                    payload = self.payload
-                else:
-                    payload = payload_message + "{0}".format(extra)
+                payload = self.build_payload(payload_message)
                 self.bc_server_sock.sendto(
                     payload.encode(), (self.broadcast_address, self.port)
                 )
@@ -155,13 +160,8 @@ class BroadcastServer:
                 )
             else:
                 print(
-                    "Error: {0} on interface for {1}".format(
-                        error,
-                        socket.inet_ntoa(
-                            self.bc_server_sock.getsockopt(
-                                socket.IPPROTO_IP, socket.SO_BROADCAST, 4
-                            )
-                        ),
+                    "Error: {0} sending broadcast from {1}".format(
+                        error, self.source_address()
                     )
                 )
             raise ServiceExit
@@ -190,8 +190,9 @@ class BroadcastListener(threading.Thread):
         # Set socket options
         self.set_platform_socket_options()
 
-        # Socket set to non-blocking
-        self.bc_client_sock.setblocking(0)
+        # Block briefly on receive so the loop can check stop_event without
+        # spinning the CPU.
+        self.bc_client_sock.settimeout(0.5)
 
         self.bc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
@@ -242,9 +243,12 @@ class BroadcastListener(threading.Thread):
 
     def on_packet(self, payload, address):
         now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
-        data = payload.decode()
+        data = payload.decode(errors="replace")
+        text = data.rstrip("\0")
+        padding = len(data) - len(text)
+        suffix = " (+{0} padding bytes)".format(padding) if padding else ""
         print(
-            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}\n".format(
-                len(data), now, address[0], address[1], data.strip()
+            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}{5}\n".format(
+                len(payload), now, address[0], address[1], text.strip(), suffix
             )
         )
