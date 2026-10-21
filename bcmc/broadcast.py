@@ -5,7 +5,6 @@
 # stdlib imports
 import platform
 import socket
-import sys
 import threading
 import time
 from datetime import datetime
@@ -38,7 +37,6 @@ class BroadcastServer:
         # the label embedded in the payload and falls back to the hostname.
         self.bind_address = host or None
         self.host = host
-        self.pyv = sys.version_info.major
         if not self.host:
             self.host = socket.gethostname()
         self.stop_event = threading.Event()
@@ -49,9 +47,9 @@ class BroadcastServer:
             self.bc_server_sock = socket.socket(
                 socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
             )
-        except socket.error as e:
-            print("Socket could not be created. Error Code : %s" % e)
-            raise ServiceExit
+        except OSError as e:
+            print(f"Socket could not be created. Error Code : {e}")
+            raise ServiceExit from e
 
         self.set_platform_socket_options()
 
@@ -63,8 +61,7 @@ class BroadcastServer:
             self.bc_server_sock.close()
             raise
 
-        if self.pyv == 3:
-            print("Sending with socket: {0}".format(self.bc_server_sock))
+        print(f"Sending with socket: {self.bc_server_sock}")
 
     def set_platform_socket_options(self):
         # Set socket to broadcasting mode
@@ -93,15 +90,12 @@ class BroadcastServer:
 
         if platform.system() == "Linux":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
-            # SO_REUSEPORT arrived in the socket module in Python 3.4.
-            if hasattr(socket, "SO_REUSEPORT"):
-                self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             return
 
         if platform.system() == "Darwin":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
-            if hasattr(socket, "SO_REUSEPORT"):
-                self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             return
 
         raise ValueError(
@@ -152,7 +146,7 @@ class BroadcastServer:
                     )
                 )
                 time.sleep(self.interval)
-        except socket.error as error:
+        except OSError as error:
             if "too long" in str(error).lower():
                 print(
                     "Error: message with payload size of {0} bytes is too long to send.".format(
@@ -177,7 +171,7 @@ class BroadcastServer:
 
 class BroadcastListener(threading.Thread):
     def __init__(self, port, debug=False, host=None):
-        threading.Thread.__init__(self)
+        super().__init__()
         self.port = int(port)
         self.bind_address = host or None
         self.host = host
@@ -187,7 +181,6 @@ class BroadcastListener(threading.Thread):
         self.buffer_size = 10240
         self.horizontal_rule = 0
         self.stop_event = threading.Event()
-        self.pyv = sys.version_info.major
 
         # Setup socket
         self.bc_client_sock = socket.socket(
@@ -210,8 +203,7 @@ class BroadcastListener(threading.Thread):
             self.bc_client_sock.close()
             raise
 
-        if self.pyv == 3:
-            print("Sending with socket: {0}".format(self.bc_client_sock))
+        print(f"Sending with socket: {self.bc_client_sock}")
 
     def set_platform_socket_options(self):
         if platform.system() == "Windows":
@@ -244,7 +236,7 @@ class BroadcastListener(threading.Thread):
             try:
                 payload, address = self.bc_client_sock.recvfrom(self.buffer_size)
                 self.on_packet(payload, address)
-            except socket.error:
+            except OSError:
                 pass
         self.bc_client_sock.close()
 

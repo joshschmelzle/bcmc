@@ -5,7 +5,6 @@
 import os
 import socket
 import struct
-import sys
 
 
 class ServiceExit(Exception):
@@ -18,16 +17,11 @@ class ServiceExit(Exception):
 _SIOCGIFADDR = 0x8915
 
 
-def _as_bytes(text):
-    if isinstance(text, bytes):
-        return text
-    return text.encode("ascii")
-
-
 def ipv4_interfaces():
     """Return [(interface name, IPv4 address), ...] for local interfaces.
 
     Empty on platforms that cannot enumerate interfaces with this method.
+    Windows has no fcntl, and non-Linux systems have no /sys/class/net.
     """
     try:
         import fcntl
@@ -35,7 +29,7 @@ def ipv4_interfaces():
         return []
     try:
         names = os.listdir("/sys/class/net")
-    except (OSError, IOError):
+    except OSError:
         return []
 
     found = []
@@ -43,9 +37,9 @@ def ipv4_interfaces():
     try:
         for name in names:
             try:
-                packed = struct.pack("256s", _as_bytes(name)[:15])
+                packed = struct.pack("256s", name.encode("ascii")[:15])
                 info = fcntl.ioctl(sock.fileno(), _SIOCGIFADDR, packed)
-            except (IOError, OSError, socket.error):
+            except OSError:
                 continue
             if not info or len(info) < 24:
                 continue
@@ -67,31 +61,18 @@ def interface_name_for_ipv4(address):
 def _announce(address):
     name = interface_name_for_ipv4(address)
     if name:
-        print("Using bind address {0} ({1})".format(address, name))
+        print(f"Using bind address {address} ({name})")
     else:
-        print("Using bind address {0}".format(address))
+        print(f"Using bind address {address}")
 
 
 def _bind_or_die(sock, target):
     try:
         sock.bind(target)
-        return
-    except socket.error as exc:
-        error = exc
-    label = target[0] if target[0] else "0.0.0.0"
-    print("Error: could not bind to {0}: {1}".format(label, error))
-    raise ServiceExit
-
-
-def _bind_to_device_option():
-    """Linux SO_BINDTODEVICE, or None when this platform cannot pin a device.
-
-    The constant is missing from Python 2.7's socket module. On Linux it is 25.
-    """
-    option = getattr(socket, "SO_BINDTODEVICE", None)
-    if option is None and sys.platform.startswith("linux"):
-        return 25
-    return option
+    except OSError as exc:
+        label = target[0] if target[0] else "0.0.0.0"
+        print(f"Error: could not bind to {label}: {exc}")
+        raise ServiceExit from exc
 
 
 def _pin_socket_to_interface(sock, address):
@@ -100,17 +81,17 @@ def _pin_socket_to_interface(sock, address):
     Linux does not deliver limited broadcasts, or multicast, to a UDP socket
     bound to a unicast address. SO_BINDTODEVICE selects the interface while
     the socket stays bound to the wildcard address so those packets arrive.
+    The option is not present on Windows.
     """
-    option = _bind_to_device_option()
+    option = getattr(socket, "SO_BINDTODEVICE", None)
     if option is None:
         return False
     name = interface_name_for_ipv4(address)
     if not name:
         return False
-    token = _as_bytes(name) + _as_bytes("\0")
     try:
-        sock.setsockopt(socket.SOL_SOCKET, option, token)
-    except socket.error:
+        sock.setsockopt(socket.SOL_SOCKET, option, f"{name}\0".encode("ascii"))
+    except OSError:
         return False
     return True
 
@@ -126,19 +107,14 @@ def bind_udp_sender(sock, address, multicast=False):
     if not address:
         return
     _announce(address)
-    packed = socket.inet_aton(address)
-    error = None
     try:
-        sock.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, packed)
-    except socket.error as exc:
-        error = exc
-    if error is not None and multicast:
-        print(
-            "Error: could not select multicast interface {0}: {1}".format(
-                address, error
-            )
+        sock.setsockopt(
+            socket.IPPROTO_IP, socket.IP_MULTICAST_IF, socket.inet_aton(address)
         )
-        raise ServiceExit
+    except OSError as exc:
+        if multicast:
+            print(f"Error: could not select multicast interface {address}: {exc}")
+            raise ServiceExit from exc
     _bind_or_die(sock, (address, 0))
 
 
@@ -159,8 +135,8 @@ def bind_udp_receiver(sock, address, port, multicast=False):
         _bind_or_die(sock, ("", port))
         if not pinned:
             print(
-                "Warning: {0} is not pinned to a device and may "
-                "receive on other interfaces".format(address)
+                f"Warning: {address} is not pinned to a device and may "
+                "receive on other interfaces"
             )
         return
     _bind_or_die(sock, (address, port))

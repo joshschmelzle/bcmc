@@ -13,6 +13,10 @@
 
 `bcmc` is developed by Josh Schmelzle and Kevin L. Marshall and is released under a three-clause BSD license.
 
+## requirements
+
+`bcmc` requires Python 3.13 or newer. Python 2 support is dropped.
+
 ## why `bcmc`?
 
 Existing tools such as Multicast Hammer are platform specific and may have unsupported system dependencies on modern OSes. `bcmc` aims to be a free cross-platform tool that can be used from *unix or Windows. While `bcmc` aims to function cross-platform, please note some optional features may not work on certain OSes.

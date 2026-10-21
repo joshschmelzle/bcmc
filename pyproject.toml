@@ -16,13 +16,14 @@ maintainers = [
 ]
 license = {text = "BSD-3-Clause"}
 keywords = ["bcmc", "broadcast", "multicast"]
-requires-python = ">=2.7"
+requires-python = ">=3.13"
 classifiers = [
     "Natural Language :: English",
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
-    "Programming Language :: Python :: 2",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
     "Intended Audience :: Telecommunications Industry",

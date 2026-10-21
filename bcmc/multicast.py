@@ -6,7 +6,6 @@
 import platform
 import socket
 import struct
-import sys
 import threading
 import time
 from datetime import datetime
@@ -41,7 +40,6 @@ class MulticastServer:
         self.bind_address = host or None
         self.host = host
         self.hostname = socket.gethostname()
-        self.pyv = sys.version_info.major
         self.payload = payload
 
         self.multicast_group = (self.group, self.port)
@@ -50,9 +48,9 @@ class MulticastServer:
             self.mc_server_sock = socket.socket(
                 socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
             )
-        except socket.error as e:
-            print("Socket could not be created. Error Code : %s" % e)
-            raise ServiceExit
+        except OSError as e:
+            print(f"Socket could not be created. Error Code : {e}")
+            raise ServiceExit from e
 
         # Set timeout so the socket does not block indefinitely.
         self.mc_server_sock.settimeout(0.2)
@@ -64,8 +62,7 @@ class MulticastServer:
             self.mc_server_sock.close()
             raise
 
-        if self.pyv == 3:
-            print("Sending with socket: {0}".format(self.mc_server_sock))
+        print(f"Sending with socket: {self.mc_server_sock}")
 
     def set_platform_socket_options(self):
         ttl = struct.pack("b", self.ttl)
@@ -151,7 +148,7 @@ class MulticastServer:
                     )
                 )
                 time.sleep(self.interval)
-        except socket.error as error:
+        except OSError as error:
             if "too long" in str(error).lower():
                 print(
                     "Error: message with payload size of {0} too long to send.".format(
@@ -176,7 +173,7 @@ class MulticastServer:
 
 class MulticastListener(threading.Thread):
     def __init__(self, group, port, debug=False, host=None):
-        threading.Thread.__init__(self)
+        super().__init__()
         self.port = int(port)
         self.bind_address = host or None
         self.host = host
@@ -187,7 +184,6 @@ class MulticastListener(threading.Thread):
         self.horizontal_rule = 0
         self.debug = debug
         self.stop_event = threading.Event()
-        self.pyv = sys.version_info.major
 
         # setup client socket
         self.mc_client_sock = socket.socket(
@@ -199,8 +195,7 @@ class MulticastListener(threading.Thread):
 
         self.set_platform_socket_options()
 
-        if self.pyv == 3:
-            print("Listening with socket: {0}".format(self.mc_client_sock))
+        print(f"Listening with socket: {self.mc_client_sock}")
 
     def set_platform_socket_options(self):
         if platform.system() == "Windows":
@@ -257,7 +252,7 @@ class MulticastListener(threading.Thread):
             try:
                 payload, address = self.mc_client_sock.recvfrom(self.buffer_size)
                 self.on_packet(payload, address)
-            except socket.error:
+            except OSError:
                 pass
         self.mc_client_sock.close()
 

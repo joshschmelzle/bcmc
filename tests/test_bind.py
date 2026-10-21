@@ -23,11 +23,8 @@ def recv_once(sock, timeout):
         return sock.recvfrom(65535)
     except socket.timeout:
         return None
-    except socket.error as exc:
-        err = getattr(exc, "errno", None)
-        if err is None and exc.args:
-            err = exc.args[0]
-        if err in (errno.EAGAIN, errno.EWOULDBLOCK):
+    except OSError as exc:
+        if exc.errno in (errno.EAGAIN, errno.EWOULDBLOCK):
             return None
         raise
 
@@ -209,7 +206,7 @@ class BindTests(unittest.TestCase):
             port = probe.bc_client_sock.getsockname()[1]
             try:
                 send_broadcast(ip, port, b"probe")
-            except socket.error:
+            except OSError:
                 continue
             if recv_once(probe.bc_client_sock, 0.4) is not None:
                 return ip
@@ -230,7 +227,7 @@ class BindTests(unittest.TestCase):
             self.addCleanup(server.mc_server_sock.close)
             try:
                 server.mc_server_sock.sendto(b"probe", (group, port))
-            except socket.error:
+            except OSError:
                 continue
             if recv_once(probe.mc_client_sock, 0.4) is not None:
                 return ip
