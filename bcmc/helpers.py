@@ -2,7 +2,7 @@
 #
 # helpers.py: helper functions for bcmc
 
-import os
+import platform
 import socket
 import struct
 
@@ -13,22 +13,28 @@ class ServiceExit(Exception):
     """
 
 
-# Linux SIOCGIFADDR. Other platforms fail the ioctl and yield no interfaces.
-_SIOCGIFADDR = 0x8915
+# SIOCGIFADDR differs by platform. Both return a struct ifreq whose
+# sockaddr_in address sits at bytes 20..24.
+_SIOCGIFADDR = {"Linux": 0x8915, "Darwin": 0xC0206921}
+
+# Darwin IP_BOUND_IF (netinet/in.h). Python does not export it.
+_IP_BOUND_IF = getattr(socket, "IP_BOUND_IF", 25)
 
 
 def ipv4_interfaces():
     """Return [(interface name, IPv4 address), ...] for local interfaces.
 
-    Empty on platforms that cannot enumerate interfaces with this method.
-    Windows has no fcntl, and non-Linux systems have no /sys/class/net.
+    Supported on Linux and macOS. Empty elsewhere (Windows has no fcntl).
     """
     try:
         import fcntl
     except ImportError:
         return []
+    request = _SIOCGIFADDR.get(platform.system())
+    if request is None:
+        return []
     try:
-        names = os.listdir("/sys/class/net")
+        names = [name for _, name in socket.if_nameindex()]
     except OSError:
         return []
 
@@ -38,7 +44,7 @@ def ipv4_interfaces():
         for name in names:
             try:
                 packed = struct.pack("256s", name.encode("ascii")[:15])
-                info = fcntl.ioctl(sock.fileno(), _SIOCGIFADDR, packed)
+                info = fcntl.ioctl(sock.fileno(), request, packed)
             except OSError:
                 continue
             if not info or len(info) < 24:
@@ -78,22 +84,30 @@ def _bind_or_die(sock, target):
 def _pin_socket_to_interface(sock, address):
     """Pin sock to the device that owns address. Return True on success.
 
-    Linux does not deliver limited broadcasts, or multicast, to a UDP socket
-    bound to a unicast address. SO_BINDTODEVICE selects the interface while
+    Linux and macOS do not deliver limited broadcasts, or multicast, to a UDP
+    socket bound to a unicast address. Pinning selects the interface while
     the socket stays bound to the wildcard address so those packets arrive.
-    The option is not present on Windows.
+    Linux uses SO_BINDTODEVICE and macOS uses IP_BOUND_IF. Windows has
+    neither.
     """
-    option = getattr(socket, "SO_BINDTODEVICE", None)
-    if option is None:
-        return False
     name = interface_name_for_ipv4(address)
     if not name:
         return False
+    system = platform.system()
     try:
-        sock.setsockopt(socket.SOL_SOCKET, option, f"{name}\0".encode("ascii"))
+        if system == "Linux" and hasattr(socket, "SO_BINDTODEVICE"):
+            sock.setsockopt(
+                socket.SOL_SOCKET, socket.SO_BINDTODEVICE, f"{name}\0".encode("ascii")
+            )
+            return True
+        if system == "Darwin":
+            sock.setsockopt(
+                socket.IPPROTO_IP, _IP_BOUND_IF, socket.if_nametoindex(name)
+            )
+            return True
     except OSError:
         return False
-    return True
+    return False
 
 
 def bind_udp_sender(sock, address, multicast=False):

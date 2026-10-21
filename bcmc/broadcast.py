@@ -203,7 +203,7 @@ class BroadcastListener(threading.Thread):
             self.bc_client_sock.close()
             raise
 
-        print(f"Sending with socket: {self.bc_client_sock}")
+        print(f"Listening with socket: {self.bc_client_sock}")
 
     def set_platform_socket_options(self):
         if platform.system() == "Windows":
