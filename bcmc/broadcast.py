@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 # app imports
-from .helpers import ServiceExit
+from .helpers import ServiceExit, bind_udp_receiver, bind_udp_sender
 
 
 class BroadcastServer:
@@ -34,6 +34,9 @@ class BroadcastServer:
         self.interval = float(interval)
         self.family = family
         self.debug = debug
+        # bind_address is only the explicit --bind value. self.host is also
+        # the label embedded in the payload and falls back to the hostname.
+        self.bind_address = host or None
         self.host = host
         self.pyv = sys.version_info.major
         if not self.host:
@@ -54,6 +57,11 @@ class BroadcastServer:
 
         # Set timeout so the socket does not block indefinitely.
         self.bc_server_sock.settimeout(0.2)
+        try:
+            bind_udp_sender(self.bc_server_sock, self.bind_address, multicast=False)
+        except ServiceExit:
+            self.bc_server_sock.close()
+            raise
 
         if self.pyv == 3:
             print("Sending with socket: {0}".format(self.bc_server_sock))
@@ -85,12 +93,15 @@ class BroadcastServer:
 
         if platform.system() == "Linux":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
-            self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            # SO_REUSEPORT arrived in the socket module in Python 3.4.
+            if hasattr(socket, "SO_REUSEPORT"):
+                self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             return
 
         if platform.system() == "Darwin":
             # Enable port reuse so we can run multiple clients and servers on single (host, port).
-            self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+            if hasattr(socket, "SO_REUSEPORT"):
+                self.bc_server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
             return
 
         raise ValueError(
@@ -168,6 +179,7 @@ class BroadcastListener(threading.Thread):
     def __init__(self, port, debug=False, host=None):
         threading.Thread.__init__(self)
         self.port = int(port)
+        self.bind_address = host or None
         self.host = host
         self.debug = debug
         if not self.host:
@@ -190,7 +202,13 @@ class BroadcastListener(threading.Thread):
 
         self.bc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-        self.bc_client_sock.bind(("", self.port))
+        try:
+            bind_udp_receiver(
+                self.bc_client_sock, self.bind_address, self.port, multicast=False
+            )
+        except ServiceExit:
+            self.bc_client_sock.close()
+            raise
 
         if self.pyv == 3:
             print("Sending with socket: {0}".format(self.bc_client_sock))

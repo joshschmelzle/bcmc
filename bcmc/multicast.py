@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 
 # app imports
-from .helpers import ServiceExit
+from .helpers import ServiceExit, bind_udp_receiver, bind_udp_sender
 
 
 class MulticastServer:
@@ -38,6 +38,7 @@ class MulticastServer:
         self.dscp = dscp
         self.stop_event = threading.Event()
         self.debug = debug
+        self.bind_address = host or None
         self.host = host
         self.hostname = socket.gethostname()
         self.pyv = sys.version_info.major
@@ -57,6 +58,11 @@ class MulticastServer:
         self.mc_server_sock.settimeout(0.2)
 
         self.set_platform_socket_options()
+        try:
+            bind_udp_sender(self.mc_server_sock, self.bind_address, multicast=True)
+        except ServiceExit:
+            self.mc_server_sock.close()
+            raise
 
         if self.pyv == 3:
             print("Sending with socket: {0}".format(self.mc_server_sock))
@@ -172,6 +178,7 @@ class MulticastListener(threading.Thread):
     def __init__(self, group, port, debug=False, host=None):
         threading.Thread.__init__(self)
         self.port = int(port)
+        self.bind_address = host or None
         self.host = host
         if not self.host:
             self.host = socket.gethostbyname(socket.gethostname())
@@ -208,17 +215,24 @@ class MulticastListener(threading.Thread):
         # Enable port reuse so we can run multiple clients and servers on single (host, port).
         self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        if platform.system() == "Linux":
-            self.mc_client_sock.bind(("", self.port))
-            mreq = struct.pack("4sl", socket.inet_aton(self.group), socket.INADDR_ANY)
-            self.mc_client_sock.setsockopt(
-                socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq
-            )
-            return
-
-        if platform.system() == "Darwin":
-            self.mc_client_sock.bind(("", self.port))
-            mreq = struct.pack("4sl", socket.inet_aton(self.group), socket.INADDR_ANY)
+        if platform.system() == "Linux" or platform.system() == "Darwin":
+            # Wildcard bind is required to receive the group. --bind pins the
+            # device when the OS allows it and puts that address in the join.
+            try:
+                bind_udp_receiver(
+                    self.mc_client_sock, self.bind_address, self.port, multicast=True
+                )
+            except ServiceExit:
+                self.mc_client_sock.close()
+                raise
+            if self.bind_address:
+                mreq = socket.inet_aton(self.group) + socket.inet_aton(
+                    self.bind_address
+                )
+            else:
+                mreq = struct.pack(
+                    "4sl", socket.inet_aton(self.group), socket.INADDR_ANY
+                )
             self.mc_client_sock.setsockopt(
                 socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq
             )

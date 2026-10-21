@@ -27,6 +27,45 @@ signal.signal(signal.SIGINT, _shutdown)
 signal.signal(signal.SIGTERM, _shutdown)
 
 
+def build_client_threads(args):
+    """Receivers for client mode. ``args.host`` is the --bind address."""
+    threads = []
+    if args.broadcast:
+        threads.append(BroadcastListener(args.port, args.debug, host=args.host))
+    if args.multicast:
+        threads.append(
+            MulticastListener(args.group, args.port, args.debug, host=args.host)
+        )
+    return threads
+
+
+def build_server(args):
+    """Sender for server mode. ``args.host`` is the --bind address."""
+    if args.broadcast:
+        return BroadcastServer(
+            args.port,
+            args.padding,
+            args.interval,
+            dscp=args.dscp,
+            debug=args.debug,
+            host=args.host,
+            payload=args.payload,
+        )
+    if args.multicast:
+        return MulticastServer(
+            args.group,
+            args.port,
+            args.padding,
+            args.interval,
+            args.ttl,
+            dscp=args.dscp,
+            debug=args.debug,
+            host=args.host,
+            payload=args.payload,
+        )
+    return None
+
+
 def main():
     parser = setup_parser()
     args = parser.parse_args()
@@ -46,46 +85,18 @@ def main():
     try:
         if args.client:
             # do client mode stuff.
-            if args.broadcast:
-                # do client broadcast stuff.
-                bc_rx = BroadcastListener(args.port, args.debug)
-                threads.append(bc_rx)
-            if args.multicast:
-                # do client multicast stuff.
-                mc_rx = MulticastListener(args.group, args.port, args.debug)
-                threads.append(mc_rx)
+            threads.extend(build_client_threads(args))
             # start threads
             for t in threads:
                 t.start()
 
         if args.server:
             # do server mode stuff
+            server = build_server(args)
             if args.broadcast:
-                # do server broadcast stuff.
-                bc_tx = BroadcastServer(
-                    args.port,
-                    args.padding,
-                    args.interval,
-                    dscp=args.dscp,
-                    debug=args.debug,
-                    host=args.host,
-                    payload=args.payload,
-                )
-                bc_tx.broadcast()
+                server.broadcast()
             if args.multicast:
-                # do server multicast stuff.
-                mc_tx = MulticastServer(
-                    args.group,
-                    args.port,
-                    args.padding,
-                    args.interval,
-                    args.ttl,
-                    dscp=args.dscp,
-                    debug=args.debug,
-                    host=args.host,
-                    payload=args.payload,
-                )
-                mc_tx.multicast()
+                server.multicast()
 
         # loop until shutdown is triggered
         while True:
