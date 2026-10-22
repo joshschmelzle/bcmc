@@ -56,10 +56,25 @@ python -m build
 
 This will create two files in a newly created dist directory, a source archive (.tar.gz) and a wheel (.whl):
 
-Uploading to PyPi
+Releasing to PyPI
 -----------------
 
-Newer versions of Twine (1.12.0 and above) can also check that your package description will render properly on PyPI.
+bcmc publishes to PyPI from GitHub Actions with [Trusted Publishing](https://docs.pypi.org/trusted-publishers/), so no API token or password is stored anywhere.
+
+1. Bump `__version__` in `bcmc/version.py` and merge it to `main`.
+2. Create a GitHub release with a tag that matches the version, e.g. `v0.2.0` for `0.2.0`:
+
+   ```bash
+   gh release create v0.2.0 --target main --title v0.2.0 --generate-notes
+   ```
+
+3. The `publish` workflow runs the full test matrix, checks that the tag matches `bcmc.__version__`, builds the sdist and wheel, and runs `twine check`.
+4. The upload job waits on the `pypi` environment. Approve it in the workflow run on GitHub and it uploads to PyPI.
+
+The PyPI side is configured under the project's Publishing settings: owner `joshschmelzle`, repository `bcmc`, workflow `publish.yml`, environment `pypi`.
+
+Manual upload (fallback)
+------------------------
 
 You can run twine check on the files created in dist:
 
@@ -72,8 +87,6 @@ Upload to production pypi:
 ```bash
 python -m twine upload dist/*
 ```
-
-Enter your username and password when requested.
 
 Versioning and Git Tagging
 --------------------------
