@@ -13,6 +13,8 @@
 
 `bcmc` is developed by Josh Schmelzle and Kevin L. Marshall and is released under a three-clause BSD license.
 
+![bcmc client receiving multicast from a bcmc server](https://raw.githubusercontent.com/joshschmelzle/bcmc/main/docs/demo.gif)
+
 ## installation
 
 `bcmc` requires Python 3.13 or newer. Install it from [PyPI](https://pypi.org/project/bcmc/) with [pipx](https://pipx.pypa.io/) or pip:
@@ -63,6 +65,8 @@ bcmc -s -mc   # server (transmit)
 ```
 
 ## example output
+
+The demo above shows a client (top) and a server (bottom) on the same host. Here is the same thing as text.
 
 Server sending multicast:
 
