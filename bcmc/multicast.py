@@ -11,7 +11,15 @@ import time
 from datetime import datetime
 
 # app imports
-from .helpers import ServiceExit, bind_udp_receiver, bind_udp_sender
+from .helpers import (
+    ServiceExit,
+    bind_udp_receiver,
+    bind_udp_sender,
+    default_ipv4_address,
+    enable_packet_info,
+    interface_index_for_ipv4,
+    recv_packet,
+)
 
 
 class MulticastServer:
@@ -103,14 +111,16 @@ class MulticastServer:
             "{0} does not appear to be a supported platform".format(platform.system())
         )
 
+    def build_payload(self, message):
+        """The payload to send: --payload or the message, plus null padding."""
+        body = self.payload if self.payload else message
+        return body + "\0" * self.padding
+
     def multicast(self):
         counter = 0
         try:
             while not self.stop_event.is_set():
                 counter += 1
-                extra = ""
-                if self.padding:
-                    extra = " " * self.padding
                 now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
                 if self.debug:
                     payload_message = (
@@ -137,10 +147,7 @@ class MulticastServer:
                             now,
                         )
                     )
-                if self.payload:
-                    payload = self.payload
-                else:
-                    payload = payload_message + "{0}".format(extra)
+                payload = self.build_payload(payload_message)
                 self.mc_server_sock.sendto(payload.encode(), self.multicast_group)
                 print(
                     "Sending multicast ({0} bytes) -> {1}".format(
@@ -177,8 +184,10 @@ class MulticastListener(threading.Thread):
         self.port = int(port)
         self.bind_address = host or None
         self.host = host
-        if not self.host:
-            self.host = socket.gethostbyname(socket.gethostname())
+        if not self.host and platform.system() == "Windows":
+            # Only Windows binds and joins on this address. Resolving the
+            # hostname can stall for a long time on macOS, so skip it there.
+            self.host = default_ipv4_address()
         self.group = group
         self.buffer_size = 10240
         self.horizontal_rule = 0
@@ -190,10 +199,14 @@ class MulticastListener(threading.Thread):
             socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP
         )
 
-        # Socket set to non-blocking
-        self.mc_client_sock.setblocking(0)
+        # Block briefly on receive so the loop can check stop_event without
+        # spinning the CPU.
+        self.mc_client_sock.settimeout(0.5)
 
         self.set_platform_socket_options()
+
+        self.packet_info = enable_packet_info(self.mc_client_sock)
+        self.interface_index = interface_index_for_ipv4(self.bind_address)
 
         print(f"Listening with socket: {self.mc_client_sock}")
 
@@ -209,6 +222,9 @@ class MulticastListener(threading.Thread):
 
         # Enable port reuse so we can run multiple clients and servers on single (host, port).
         self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        if platform.system() == "Darwin":
+            # BSD needs SO_REUSEPORT to share a wildcard UDP port between processes.
+            self.mc_client_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
 
         if platform.system() == "Linux" or platform.system() == "Darwin":
             # Wildcard bind is required to receive the group. --bind pins the
@@ -250,17 +266,32 @@ class MulticastListener(threading.Thread):
     def run(self):
         while not self.stop_event.is_set():
             try:
-                payload, address = self.mc_client_sock.recvfrom(self.buffer_size)
-                self.on_packet(payload, address)
+                payload, address, ifindex, destination = recv_packet(
+                    self.mc_client_sock, self.buffer_size, self.packet_info
+                )
+                if self.accepts(ifindex, destination):
+                    self.on_packet(payload, address)
             except OSError:
                 pass
         self.mc_client_sock.close()
 
+    def accepts(self, ifindex, destination):
+        """Drop packets not sent to the group (such as broadcasts on the same
+        port), and packets from other interfaces under --bind."""
+        if destination and destination != self.group:
+            return False
+        if self.interface_index and ifindex and ifindex != self.interface_index:
+            return False
+        return True
+
     def on_packet(self, payload, address):
         now = datetime.now().strftime("%H:%M:%S.%f")[:-2]
-        data = payload.decode()
+        data = payload.decode(errors="replace")
+        text = data.rstrip("\0")
+        padding = len(data) - len(text)
+        suffix = " (+{0} padding bytes)".format(padding) if padding else ""
         print(
-            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}\n".format(
-                len(data), now, address[0], address[1], data.strip()
+            "Receiving ({0} bytes) time {1} from {2}:{3}:\n -> {4}{5}\n".format(
+                len(payload), now, address[0], address[1], text.strip(), suffix
             )
         )

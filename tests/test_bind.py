@@ -8,13 +8,26 @@ import unittest
 
 from bcmc.appsetup import setup_parser
 from bcmc.broadcast import BroadcastListener, BroadcastServer
-from bcmc.helpers import ServiceExit, interface_name_for_ipv4, ipv4_interfaces
+from bcmc.helpers import (
+    _IP_BOUND_IF,
+    ServiceExit,
+    interface_name_for_ipv4,
+    ipv4_interfaces,
+)
 from bcmc.multicast import MulticastListener, MulticastServer
 
 
 def multicast_if(sock):
     raw = sock.getsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_IF, 4)
     return socket.inet_ntoa(raw)
+
+
+def local_address(sock):
+    """The socket's bound address. Windows raises for an unbound socket."""
+    try:
+        return sock.getsockname()[0]
+    except OSError:
+        return "0.0.0.0"
 
 
 def recv_once(sock, timeout):
@@ -39,11 +52,17 @@ def send_broadcast(address, port, payload):
         sock.close()
 
 
+LINUX = sys.platform.startswith("linux")
+MACOS = sys.platform == "darwin"
+UNIX_PINNING = LINUX or MACOS
+LOOPBACK = "lo0" if MACOS else "lo"
+
+
 class BindTests(unittest.TestCase):
     def test_loopback_interface_lookup(self):
-        if not sys.platform.startswith("linux"):
-            self.skipTest("interface lookup is implemented for linux")
-        self.assertEqual(interface_name_for_ipv4("127.0.0.1"), "lo")
+        if not UNIX_PINNING:
+            self.skipTest("interface lookup is implemented for linux and macOS")
+        self.assertEqual(interface_name_for_ipv4("127.0.0.1"), LOOPBACK)
         addresses = [ip for _name, ip in ipv4_interfaces()]
         self.assertIn("127.0.0.1", addresses)
 
@@ -51,7 +70,7 @@ class BindTests(unittest.TestCase):
         server = BroadcastServer(9, 0, 1)
         self.addCleanup(server.bc_server_sock.close)
         self.assertIsNone(server.bind_address)
-        self.assertEqual(server.bc_server_sock.getsockname()[0], "0.0.0.0")
+        self.assertEqual(local_address(server.bc_server_sock), "0.0.0.0")
         self.assertEqual(multicast_if(server.bc_server_sock), "0.0.0.0")
 
     def test_broadcast_server_bind_sets_source(self):
@@ -75,7 +94,7 @@ class BindTests(unittest.TestCase):
         server = MulticastServer("239.255.1.2", 9, 0, 1)
         self.addCleanup(server.mc_server_sock.close)
         self.assertIsNone(server.bind_address)
-        self.assertEqual(server.mc_server_sock.getsockname()[0], "0.0.0.0")
+        self.assertEqual(local_address(server.mc_server_sock), "0.0.0.0")
         self.assertEqual(multicast_if(server.mc_server_sock), "0.0.0.0")
 
     def test_cli_bind_is_applied_to_broadcast_sockets(self):
@@ -130,9 +149,7 @@ class BindTests(unittest.TestCase):
         self.addCleanup(listener.mc_client_sock.close)
         self.assertEqual(listener.bind_address, "127.0.0.1")
 
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "uses linux broadcast delivery"
-    )
+    @unittest.skipUnless(LINUX, "linux loopback carries limited broadcasts")
     def test_broadcast_bind_source_and_receive_interface(self):
         listener = BroadcastListener(0, host="127.0.0.1")
         self.addCleanup(listener.bc_client_sock.close)
@@ -153,9 +170,7 @@ class BindTests(unittest.TestCase):
         send_broadcast(other, port, b"from-other")
         self.assertIsNone(recv_once(listener.bc_client_sock, 0.4))
 
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "uses linux multicast delivery"
-    )
+    @unittest.skipUnless(UNIX_PINNING, "uses linux or macOS multicast delivery")
     def test_multicast_bind_receive_interface(self):
         group = "239.255.1.5"
         listener = MulticastListener(group, 0, host="127.0.0.1")
@@ -179,9 +194,7 @@ class BindTests(unittest.TestCase):
         other_server.mc_server_sock.sendto(b"from-other", (group, port))
         self.assertIsNone(recv_once(listener.mc_client_sock, 0.4))
 
-    @unittest.skipUnless(
-        sys.platform.startswith("linux"), "uses linux multicast delivery"
-    )
+    @unittest.skipUnless(UNIX_PINNING, "uses linux or macOS multicast delivery")
     def test_multicast_without_bind_still_receives(self):
         # Default multicast egress is the primary interface, not loopback.
         # A listener that did not pass --bind must still receive that traffic.
@@ -191,10 +204,50 @@ class BindTests(unittest.TestCase):
         port = listener.mc_client_sock.getsockname()[1]
         server = MulticastServer(group, port, 0, 1)
         self.addCleanup(server.mc_server_sock.close)
-        server.mc_server_sock.sendto(b"open", (group, port))
+        try:
+            server.mc_server_sock.sendto(b"open", (group, port))
+        except OSError as exc:
+            if exc.errno in (errno.EHOSTUNREACH, errno.ENETUNREACH):
+                self.skipTest(f"no default multicast route: {exc}")
+            raise
         got = recv_once(listener.mc_client_sock, 1.0)
         self.assertIsNotNone(got)
         self.assertEqual(got[0], b"open")
+
+    @unittest.skipUnless(UNIX_PINNING, "receivers are pinned on linux and macOS")
+    def test_bound_receivers_use_wildcard_address(self):
+        # A unicast bind drops limited broadcasts and group traffic, so a
+        # bound receiver must stay on 0.0.0.0 and be pinned to the device.
+        bc = BroadcastListener(0, host="127.0.0.1")
+        self.addCleanup(bc.bc_client_sock.close)
+        self.assertEqual(bc.bc_client_sock.getsockname()[0], "0.0.0.0")
+        mc = MulticastListener("239.255.1.7", 0, host="127.0.0.1")
+        self.addCleanup(mc.mc_client_sock.close)
+        self.assertEqual(mc.mc_client_sock.getsockname()[0], "0.0.0.0")
+        if MACOS:
+            index = socket.if_nametoindex(LOOPBACK)
+            for sock in (bc.bc_client_sock, mc.mc_client_sock):
+                self.assertEqual(
+                    sock.getsockopt(socket.IPPROTO_IP, _IP_BOUND_IF), index
+                )
+
+    @unittest.skipUnless(MACOS, "macOS broadcast delivery on a real interface")
+    def test_macos_bound_broadcast_is_received(self):
+        # lo0 cannot send limited broadcasts on macOS, so use a real interface.
+        source = self._other_broadcast_source()
+        if source is None:
+            self.skipTest("no interface can send a limited broadcast")
+        listener = BroadcastListener(0, host=source)
+        self.addCleanup(listener.bc_client_sock.close)
+        port = listener.bc_client_sock.getsockname()[1]
+        server = BroadcastServer(port, 0, 1, host=source)
+        self.addCleanup(server.bc_server_sock.close)
+        self.assertEqual(server.bc_server_sock.getsockname()[0], source)
+        server.bc_server_sock.sendto(b"bound", ("255.255.255.255", port))
+        got = recv_once(listener.bc_client_sock, 1.0)
+        self.assertIsNotNone(got)
+        self.assertEqual(got[0], b"bound")
+        self.assertEqual(got[1][0], source)
 
     def _other_broadcast_source(self):
         """An address other than loopback that can emit a limited broadcast."""

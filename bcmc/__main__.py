@@ -9,6 +9,8 @@
 
 # stdlib imports
 import signal
+import sys
+import time
 
 # our app imports
 from .appsetup import setup_parser
@@ -66,7 +68,21 @@ def build_server(args):
     return None
 
 
+def _tolerate_unencodable_output():
+    """Replace characters the console can't encode instead of crashing.
+
+    Windows consoles and redirected output often use a legacy code page such
+    as cp1252, which can't encode the help epilog's heart.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def main():
+    _tolerate_unencodable_output()
     parser = setup_parser()
     args = parser.parse_args()
     if not args.client and not args.server:
@@ -98,12 +114,17 @@ def main():
             if args.multicast:
                 server.multicast()
 
-        # loop until shutdown is triggered
+        # Wait for a shutdown signal without spinning the CPU. SIGINT and
+        # SIGTERM raise ServiceExit in the main thread, even during sleep.
         while True:
-            pass
+            time.sleep(1)
     except ServiceExit:
         for t in threads:
             t.stop_event.set()
+        for t in threads:
+            worker = getattr(t, "thread", None)
+            if worker is not None:
+                worker.join(timeout=2)
 
 
 if __name__ == "__main__":
