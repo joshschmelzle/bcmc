@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -14,7 +14,8 @@ authors = [
 maintainers = [
   { name = "Josh Schmelzle", email = "josh@joshschmelzle.com" },
 ]
-license = {text = "BSD-3-Clause"}
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
 keywords = ["bcmc", "broadcast", "multicast"]
 requires-python = ">=3.13"
 classifiers = [
@@ -30,11 +31,13 @@ classifiers = [
     "Topic :: Utilities",
     "Topic :: System :: Networking",
     "Topic :: System :: Networking :: Monitoring",
-    "License :: OSI Approved :: BSD License",
 ]
 
 [project.urls]
 Homepage = "https://github.com/joshschmelzle/bcmc"
+Source = "https://github.com/joshschmelzle/bcmc"
+Issues = "https://github.com/joshschmelzle/bcmc/issues"
+Changelog = "https://github.com/joshschmelzle/bcmc/releases"
 
 [project.scripts]
 bcmc = "bcmc.__main__:main"
